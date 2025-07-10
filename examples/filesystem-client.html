@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPK Network File Browser</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .path-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .path-segment {
+            color: #007aff;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        
+        .path-segment:hover {
+            text-decoration: underline;
+        }
+        
+        .file-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 15px;
+        }
+        
+        .file-item {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .file-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+        
+        .file-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+        
+        .file-name {
+            font-size: 14px;
+            word-break: break-word;
+            margin-bottom: 5px;
+        }
+        
+        .file-size {
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .folder { color: #FFB900; }
+        .video { color: #FF3B30; }
+        .image { color: #4CD964; }
+        .document { color: #007AFF; }
+        .file { color: #8E8E93; }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        
+        .media-preview {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.9);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .media-preview.active {
+            display: flex;
+        }
+        
+        .media-content {
+            max-width: 90%;
+            max-height: 90%;
+        }
+        
+        .close-preview {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: white;
+            font-size: 30px;
+            cursor: pointer;
+            background: none;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>SPK Network File Browser</h1>
+        <input type="text" id="username" placeholder="Enter username" value="disregardfiat">
+        <button onclick="loadDirectory('/')">Browse Files</button>
+    </div>
+    
+    <div class="path-bar" id="pathBar"></div>
+    
+    <div id="content">
+        <div class="loading">Enter a username and click Browse Files to start</div>
+    </div>
+    
+    <div class="media-preview" id="mediaPreview">
+        <button class="close-preview" onclick="closePreview()">×</button>
+        <div id="previewContent"></div>
+    </div>
+
+    <script>
+        let currentPath = '/';
+        let currentUsername = '';
+        
+        function getFileIcon(item) {
+            if (item.type === 'directory') return '📁';
+            
+            const mimeType = item.mimeType || '';
+            if (mimeType.startsWith('video/')) return '🎬';
+            if (mimeType.startsWith('image/')) return '🖼️';
+            if (mimeType.includes('pdf')) return '📄';
+            if (mimeType.includes('zip') || mimeType.includes('tar')) return '🗜️';
+            if (mimeType.includes('audio/')) return '🎵';
+            return '📄';
+        }
+        
+        function getFileClass(item) {
+            if (item.type === 'directory') return 'folder';
+            
+            const mimeType = item.mimeType || '';
+            if (mimeType.startsWith('video/')) return 'video';
+            if (mimeType.startsWith('image/')) return 'image';
+            if (mimeType.includes('pdf') || mimeType.includes('document')) return 'document';
+            return 'file';
+        }
+        
+        function formatSize(bytes) {
+            if (!bytes) return '';
+            const units = ['B', 'KB', 'MB', 'GB'];
+            let size = bytes;
+            let unitIndex = 0;
+            
+            while (size >= 1024 && unitIndex < units.length - 1) {
+                size /= 1024;
+                unitIndex++;
+            }
+            
+            return `${size.toFixed(1)} ${units[unitIndex]}`;
+        }
+        
+        function updatePathBar() {
+            const pathBar = document.getElementById('pathBar');
+            const segments = currentPath.split('/').filter(s => s);
+            
+            let html = '<a class="path-segment" onclick="loadDirectory(\'/\')">🏠 Home</a>';
+            
+            let buildPath = '';
+            segments.forEach(segment => {
+                buildPath += '/' + segment;
+                html += ` / <a class="path-segment" onclick="loadDirectory('${buildPath}')">${segment}</a>`;
+            });
+            
+            pathBar.innerHTML = html;
+        }
+        
+        async function loadDirectory(path) {
+            const username = document.getElementById('username').value;
+            if (!username) {
+                alert('Please enter a username');
+                return;
+            }
+            
+            currentUsername = username;
+            currentPath = path;
+            updatePathBar();
+            
+            const content = document.getElementById('content');
+            content.innerHTML = '<div class="loading">Loading...</div>';
+            
+            try {
+                const response = await fetch(`/fs/${username}${path}`);
+                if (!response.ok) throw new Error('Failed to load directory');
+                
+                const data = await response.json();
+                displayDirectory(data);
+            } catch (error) {
+                content.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+        
+        function displayDirectory(data) {
+            const content = document.getElementById('content');
+            
+            if (!data.contents || data.contents.length === 0) {
+                content.innerHTML = '<div class="loading">This directory is empty</div>';
+                return;
+            }
+            
+            const grid = data.contents.map(item => `
+                <div class="file-item" onclick="handleItemClick(${JSON.stringify(item).replace(/"/g, '&quot;')})">
+                    <div class="file-icon ${getFileClass(item)}">${getFileIcon(item)}</div>
+                    <div class="file-name">${item.name}</div>
+                    <div class="file-size">${formatSize(item.size)}</div>
+                </div>
+            `).join('');
+            
+            content.innerHTML = `<div class="file-grid">${grid}</div>`;
+        }
+        
+        function handleItemClick(item) {
+            if (item.type === 'directory') {
+                loadDirectory(item.path);
+            } else {
+                previewFile(item);
+            }
+        }
+        
+        function previewFile(item) {
+            const preview = document.getElementById('mediaPreview');
+            const content = document.getElementById('previewContent');
+            
+            const fileUrl = `/fs/${currentUsername}${currentPath}/${item.name}`;
+            
+            if (item.mimeType && item.mimeType.startsWith('image/')) {
+                content.innerHTML = `<img src="${fileUrl}" class="media-content" alt="${item.name}">`;
+                preview.classList.add('active');
+            } else if (item.mimeType && item.mimeType.startsWith('video/')) {
+                content.innerHTML = `
+                    <video controls class="media-content">
+                        <source src="${fileUrl}" type="${item.mimeType}">
+                    </video>
+                `;
+                preview.classList.add('active');
+            } else if (item.mimeType && item.mimeType.startsWith('audio/')) {
+                content.innerHTML = `
+                    <audio controls class="media-content">
+                        <source src="${fileUrl}" type="${item.mimeType}">
+                    </audio>
+                `;
+                preview.classList.add('active');
+            } else {
+                // For other files, open in new tab
+                window.open(fileUrl, '_blank');
+            }
+        }
+        
+        function closePreview() {
+            const preview = document.getElementById('mediaPreview');
+            const content = document.getElementById('previewContent');
+            preview.classList.remove('active');
+            content.innerHTML = '';
+        }
+        
+        // Close preview on escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closePreview();
+        });
+        
+        // Close preview on background click
+        document.getElementById('mediaPreview').addEventListener('click', (e) => {
+            if (e.target.id === 'mediaPreview') closePreview();
+        });
+    </script>
+</body>
+</html>

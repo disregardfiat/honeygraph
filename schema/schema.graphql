@@ -1,0 +1,123 @@
+# Honeygraph Schema for SPK Network Blockchain Replication
+
+type Block {
+  blockNum: Int! @id
+  blockHash: String! @search(by: [hash])
+  previousHash: String @search(by: [hash])
+  timestamp: DateTime!
+  forkId: String! @search(by: [hash, term])
+  isFinalized: Boolean! @search
+  operations: [Operation] @hasInverse(field: block)
+  checkpoint: Checkpoint @hasInverse(field: block)
+}
+
+type Operation {
+  id: ID!
+  block: Block!
+  blockNum: Int! @search(by: [int])
+  index: Int!
+  type: OperationType! @search(by: [term])
+  path: String! @search(by: [term, fulltext])
+  data: String # JSON encoded data
+  previousValue: String # For reversions
+  forkId: String! @search(by: [hash])
+  isFinalized: Boolean! @search
+  timestamp: DateTime! @search(by: [hour])
+  reverted: Boolean @search
+  revertedBy: Operation @hasInverse(field: reverts)
+  reverts: Operation
+}
+
+enum OperationType {
+  PUT
+  DEL
+  BATCH
+  CHECKPOINT
+}
+
+type Fork {
+  forkId: String! @id @search(by: [hash])
+  parentFork: String @search(by: [hash])
+  createdAtBlock: Int! @search(by: [int])
+  status: ForkStatus! @search(by: [term])
+  lastBlock: Int! @search(by: [int])
+  operations: [Operation] @hasInverse(field: fork)
+  createdAt: DateTime!
+  orphanedAt: DateTime
+}
+
+enum ForkStatus {
+  ACTIVE
+  ORPHANED
+  CANONICAL
+}
+
+type Checkpoint {
+  blockNum: Int! @id
+  blockHash: String! @search(by: [hash])
+  forkId: String! @search(by: [hash])
+  timestamp: DateTime!
+  block: Block!
+  stateHash: String! @search(by: [hash])
+  validated: Boolean! @search
+}
+
+type StateNode {
+  path: String! @id @search(by: [term, fulltext])
+  value: String! # JSON encoded
+  lastUpdate: Int! @search(by: [int])
+  forkId: String! @search(by: [hash])
+  isDeleted: Boolean @search
+  history: [StateHistory] @hasInverse(field: node)
+}
+
+type StateHistory {
+  id: ID!
+  node: StateNode!
+  blockNum: Int! @search(by: [int])
+  value: String!
+  operation: Operation!
+  timestamp: DateTime! @search(by: [hour])
+}
+
+# Consensus tracking
+type ConsensusReport {
+  blockNum: Int! @search(by: [int])
+  node: String! @search(by: [term])
+  hash: String! @search(by: [hash])
+  timestamp: DateTime!
+  agreedWith: [String]
+}
+
+# Read query optimization
+type PathIndex {
+  path: String! @id @search(by: [term])
+  depth: Int! @search(by: [int])
+  parent: String @search(by: [term])
+  children: [String]
+  lastAccess: DateTime
+  accessCount: Int
+}
+
+# Performance metrics
+type ReplicationMetric {
+  id: ID!
+  timestamp: DateTime! @search(by: [hour])
+  blockNum: Int! @search(by: [int])
+  replicationLag: Float # seconds
+  operationCount: Int
+  dataSize: Int # bytes
+  success: Boolean
+}
+
+# Dgraph type definitions for indexing
+type DgraphIndex {
+  path: String @index(term, fulltext) .
+  blockNum: Int @index(int) .
+  forkId: String @index(hash, term) .
+  timestamp: DateTime @index(hour) .
+  isFinalized: Boolean @index(bool) .
+  operationType: String @index(term) .
+  blockHash: String @index(hash) .
+  status: String @index(term) .
+}

@@ -1,0 +1,98 @@
+version: '3.8'
+
+# This docker-compose file is for systems with ZFS support
+# Requires host system to have ZFS installed and a dedicated dataset
+
+services:
+  dgraph-zero:
+    image: dgraph/dgraph:latest
+    container_name: honeygraph-zero
+    volumes:
+      # Mount ZFS dataset directly
+      - /tank/dgraph/zero:/dgraph
+    ports:
+      - "5080:5080"
+      - "6080:6080"
+    command: dgraph zero --my=dgraph-zero:5080
+    restart: unless-stopped
+    networks:
+      - honeygraph
+    # Need privileged for ZFS operations
+    privileged: false
+
+  dgraph-alpha:
+    image: dgraph/dgraph:latest
+    container_name: honeygraph-alpha
+    volumes:
+      # Mount ZFS dataset directly
+      - /tank/dgraph/alpha:/dgraph
+      - ./schema:/schema
+    ports:
+      - "8080:8080"
+      - "9080:9080"
+    command: dgraph alpha --my=dgraph-alpha:7080 --zero=dgraph-zero:5080 --security whitelist=0.0.0.0/0
+    restart: unless-stopped
+    depends_on:
+      - dgraph-zero
+    networks:
+      - honeygraph
+    # Need privileged for ZFS operations
+    privileged: false
+
+  dgraph-ratel:
+    image: dgraph/ratel:latest
+    container_name: honeygraph-ratel
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    networks:
+      - honeygraph
+
+  honeygraph-api:
+    build: .
+    container_name: honeygraph-api
+    ports:
+      - "3030:3030"
+    environment:
+      - NODE_ENV=production
+      - DGRAPH_URL=http://dgraph-alpha:9080
+      - API_PORT=3030
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      # ZFS Configuration
+      - ZFS_CHECKPOINTS_ENABLED=true
+      - ZFS_DATASET=tank/dgraph
+      - DGRAPH_DATA_PATH=/tank/dgraph
+      - ZFS_MAX_SNAPSHOTS=100
+      # Redis for queue
+      - REDIS_HOST=redis
+    volumes:
+      - ./logs:/app/logs
+      # Mount host docker socket for container control
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mount ZFS admin socket if needed
+      - /dev/zfs:/dev/zfs
+    depends_on:
+      - dgraph-alpha
+      - redis
+    restart: unless-stopped
+    networks:
+      - honeygraph
+    # Need privileged for ZFS operations
+    privileged: true
+    cap_add:
+      - SYS_ADMIN
+
+  redis:
+    image: redis:7-alpine
+    container_name: honeygraph-redis
+    volumes:
+      - ./redis-data:/data
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    networks:
+      - honeygraph
+
+networks:
+  honeygraph:
+    driver: bridge

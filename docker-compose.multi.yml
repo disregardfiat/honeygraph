@@ -1,0 +1,163 @@
+version: '3.8'
+
+services:
+  honeygraph-multi:
+    image: node:18-alpine
+    container_name: honeygraph-multi
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - ../honeycomb-spkcc:/honeycomb-spkcc
+      - honeygraph-data:/data/honeygraph
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+      - HOST=0.0.0.0
+      - DATA_PATH=/data/honeygraph
+      # Token-specific environment variables
+      - SPK_CONTRACT=@spknetwork
+      - DLUX_CONTRACT=@dlux-io
+      - LARYNX_CONTRACT=@spknetwork
+      - BROCA_CONTRACT=@spknetwork
+    ports:
+      - "4000:4000"
+    command: node server-multi.js
+    restart: unless-stopped
+    networks:
+      - honeygraph-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional: Separate ZFS management container
+  zfs-manager:
+    image: alpine:latest
+    container_name: honeygraph-zfs
+    privileged: true
+    volumes:
+      - /dev:/dev
+      - /sys:/sys
+      - honeygraph-data:/data/honeygraph
+    environment:
+      - ZFS_POOL=honeygraph
+    command: |
+      sh -c "
+      apk add --no-cache zfs
+      # Check if pool exists, create if not
+      if ! zpool list ${ZFS_POOL} 2>/dev/null; then
+        echo 'Creating ZFS pool...'
+        # Note: Adjust device path as needed
+        zpool create -f ${ZFS_POOL} /dev/zvol/main/honeygraph
+      fi
+      # Keep container running
+      tail -f /dev/null
+      "
+    restart: unless-stopped
+    networks:
+      - honeygraph-network
+
+  # Optional: Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: honeygraph-redis
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    networks:
+      - honeygraph-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Optional: PostgreSQL for persistent storage
+  postgres:
+    image: postgres:15-alpine
+    container_name: honeygraph-postgres
+    environment:
+      - POSTGRES_DB=honeygraph
+      - POSTGRES_USER=honeygraph
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-honeygraph123}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    networks:
+      - honeygraph-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U honeygraph"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Optional: Monitoring with Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: honeygraph-prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    restart: unless-stopped
+    networks:
+      - honeygraph-network
+
+  # Optional: Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: honeygraph-grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    networks:
+      - honeygraph-network
+    depends_on:
+      - prometheus
+
+volumes:
+  honeygraph-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-/data/honeygraph}
+  redis-data:
+  postgres-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  honeygraph-network:
+    driver: bridge
+
+# Development override example:
+# docker-compose -f docker-compose.multi.yml -f docker-compose.dev.yml up

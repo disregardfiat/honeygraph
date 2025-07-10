@@ -1,0 +1,129 @@
+# Dgraph Schema for Honeygraph
+
+# Block type
+blockNum: int @index(int) .
+blockHash: string @index(hash) .
+previousHash: string @index(hash) .
+timestamp: datetime @index(hour) .
+forkId: string @index(hash, term) .
+isFinalized: bool @index(bool) .
+operations: [uid] @reverse .
+checkpoint: uid @reverse .
+
+# Operation type
+op.id: string @index(exact) .
+block: uid .
+op.blockNum: int @index(int) .
+op.index: int .
+op.type: string @index(term) .
+op.path: string @index(term, fulltext) .
+op.data: string .
+op.previousValue: string .
+
+# State type
+state.path: string @index(exact, term) .
+state.value: string .
+state.blockNum: int @index(int) .
+state.lastModified: datetime @index(hour) .
+state.forkId: string @index(term) .
+state.history: [uid] @reverse .
+
+# StateHistory type
+history.blockNum: int @index(int) .
+history.operation: uid .
+history.value: string .
+history.timestamp: datetime .
+history.state: uid .
+
+# Fork type
+fork.id: string @index(exact) .
+fork.parentFork: string @index(exact) .
+fork.branchBlock: int @index(int) .
+fork.tipBlock: int @index(int) .
+fork.isActive: bool @index(bool) .
+fork.consensusScore: float .
+fork.blocks: [uid] @reverse .
+
+# Checkpoint type
+checkpoint.blockNum: int @index(int) .
+checkpoint.hash: string @index(hash) .
+checkpoint.zfsSnapshot: string @index(exact) .
+checkpoint.timestamp: datetime @index(hour) .
+checkpoint.validated: bool @index(bool) .
+checkpoint.block: uid .
+
+# Peer type
+peer.id: string @index(exact) .
+peer.endpoint: string @index(exact) .
+peer.lastSeen: datetime @index(hour) .
+peer.version: string .
+peer.isActive: bool @index(bool) .
+peer.syncStatus: string @index(term) .
+
+# Type definitions
+type Block {
+  blockNum
+  blockHash
+  previousHash
+  timestamp
+  forkId
+  isFinalized
+  operations
+  checkpoint
+}
+
+type Operation {
+  op.id
+  block
+  op.blockNum
+  op.index
+  op.type
+  op.path
+  op.data
+  op.previousValue
+}
+
+type State {
+  state.path
+  state.value
+  state.blockNum
+  state.lastModified
+  state.forkId
+  state.history
+}
+
+type StateHistory {
+  history.blockNum
+  history.operation
+  history.value
+  history.timestamp
+  history.state
+}
+
+type Fork {
+  fork.id
+  fork.parentFork
+  fork.branchBlock
+  fork.tipBlock
+  fork.isActive
+  fork.consensusScore
+  fork.blocks
+}
+
+type Checkpoint {
+  checkpoint.blockNum
+  checkpoint.hash
+  checkpoint.zfsSnapshot
+  checkpoint.timestamp
+  checkpoint.validated
+  checkpoint.block
+}
+
+type Peer {
+  peer.id
+  peer.endpoint
+  peer.lastSeen
+  peer.version
+  peer.isActive
+  peer.syncStatus
+}

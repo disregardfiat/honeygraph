@@ -1,0 +1,512 @@
+# SPK Network Enhanced Schema for Dgraph
+# This schema transforms honeycomb's k:v structure into a rich graph database
+
+# Account - Core user entity with all related data
+type Account {
+  username: String! @id @search(by: [hash, term])
+  
+  # Token balances
+  larynxBalance: Int @search(by: [int])
+  spkBalance: Int @search(by: [int])
+  brocaBalance: String # "amount,blocknum" format
+  liquidBroca: Int @search(by: [int])
+  
+  # Power and governance
+  govBalance: Int @search(by: [int])
+  govLocked: Int @search(by: [int])
+  power: Int @search(by: [int])
+  powerGranted: Int @search(by: [int])
+  powerGrantedTo: [PowerGrant] @hasInverse(field: grantor)
+  powerReceivedFrom: [PowerGrant] @hasInverse(field: grantee)
+  
+  # Contracts and storage
+  contracts: [StorageContract] @hasInverse(field: owner) # Contracts I own
+  contractsStoring: [StorageContract] @hasInverse(field: storageNodes) # Contracts I'm storing
+  files: [File] @hasInverse(field: owner)
+  
+  # Services provided
+  services: [Service] @hasInverse(field: provider)
+  serviceEndpoints: [ServiceEndpoint] @hasInverse(field: account)
+  
+  # Market activity
+  nodeMarket: NodeMarket
+  dexOrders: [DexOrder] @hasInverse(field: owner)
+  liquidityPositions: [LiquidityPosition] @hasInverse(field: provider)
+  
+  # Delegations
+  delegationsOut: [Delegation] @hasInverse(field: from)
+  delegationsIn: [Delegation] @hasInverse(field: to)
+  
+  # Feed/Activity
+  transactions: [Transaction] @hasInverse(field: from)
+  
+  # Storage node info (if this account is a storage provider)
+  storageNode: StorageNode @hasInverse(field: account)
+  
+  # Metadata
+  profile: AccountProfile
+  createdAt: DateTime
+  lastActivity: DateTime @search(by: [hour])
+}
+
+# Account profile metadata
+type AccountProfile {
+  id: ID!
+  account: Account! @hasInverse(field: profile)
+  description: String @search(by: [fulltext])
+  website: String
+  location: String
+  profileImage: String
+}
+
+# Storage contract for IPFS pinning
+type StorageContract {
+  id: String! @id # owner:txid
+  owner: Account!
+  txid: String! @search(by: [hash])
+  
+  # Contract terms
+  price: Int! # Total price in BROCA
+  rate: Float! # BROCA per byte per month
+  duration: Int! # Blocks (30 days default)
+  uploaders: Int! # Number of storage nodes
+  
+  # Files in contract
+  files: [File] @hasInverse(field: contract)
+  dataFiles: String # df - JSON map of CID to bytes
+  
+  # Validation
+  validations: Int # v - successful validations
+  lastValidated: Int # Block number
+  
+  # Storage nodes (accounts that are storing this contract's files)
+  storageNodes: [Account] # n - map of node accounts from contract.n field
+  
+  # Extensions
+  extensions: String # ex - comma-separated buyer:endblock
+  executable: String # e - executable path
+  
+  # Status
+  createdBlock: Int! @search(by: [int])
+  expiresBlock: Int! @search(by: [int])
+  status: ContractStatus! @search(by: [term])
+}
+
+enum ContractStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+# Individual file in storage network
+type File {
+  cid: String! @id @search(by: [hash])
+  owner: Account!
+  contract: StorageContract
+  
+  # File metadata
+  size: Int! @search(by: [int])
+  name: String @search(by: [term, fulltext])
+  type: String @search(by: [term])
+  
+  # Encryption
+  encrypted: Boolean @search
+  encryptionKey: String # For shared access
+  
+  # Organization
+  path: String @search(by: [term])
+  tags: [String] @search(by: [term])
+  labels: [String] @search(by: [term])
+  
+  # Licensing
+  license: String @search(by: [term])
+  price: Int # Price to access
+  
+  # Validation
+  validations: [Validation] @hasInverse(field: file)
+  lastValidated: DateTime
+  
+  # Metadata
+  uploadedAt: DateTime! @search(by: [hour])
+  metadata: String # JSON metadata
+}
+
+# Storage node in the network
+type StorageNode {
+  account: Account! @id
+  
+  # Node info
+  domain: String @search(by: [term])
+  publicKey: String
+  peerId: String @search(by: [hash])
+  
+  # Performance
+  reliability: Float @search(by: [float])
+  uptime: Float @search(by: [float])
+  
+  # Capacity
+  storageUsed: Int
+  storageAvailable: Int
+  
+  # Contracts
+  contracts: [StorageContract] @hasInverse(field: nodes)
+  validations: [Validation] @hasInverse(field: node)
+  
+  # Rewards
+  rewardsEarned: Int
+  lastReward: DateTime
+}
+
+# File validation record
+type Validation {
+  id: ID!
+  file: File!
+  node: StorageNode!
+  contract: StorageContract!
+  
+  blockNum: Int! @search(by: [int])
+  timestamp: DateTime! @search(by: [hour])
+  
+  # Proof details
+  challenge: String!
+  response: String!
+  valid: Boolean! @search
+  
+  # Size verification
+  reportedSize: Int
+  verifiedSize: Int
+  
+  # Reward
+  reward: Int
+}
+
+# DEX order
+type DexOrder {
+  id: String! @id # txid or order id
+  owner: Account!
+  
+  # Order details
+  type: OrderType! @search(by: [term])
+  pair: String! @search(by: [term]) # e.g., "LARYNX:HIVE"
+  rate: Float! @search(by: [float])
+  amount: Int!
+  filled: Int!
+  
+  # Status
+  status: OrderStatus! @search(by: [term])
+  createdAt: DateTime! @search(by: [hour])
+  updatedAt: DateTime
+  expiresAt: DateTime @search(by: [hour])
+  
+  # Execution
+  fills: [OrderFill] @hasInverse(field: order)
+}
+
+enum OrderType {
+  BUY
+  SELL
+  LIMIT
+  MARKET
+}
+
+enum OrderStatus {
+  OPEN
+  PARTIAL
+  FILLED
+  CANCELLED
+  EXPIRED
+}
+
+# Order execution record
+type OrderFill {
+  id: ID!
+  order: DexOrder!
+  counterparty: Account!
+  
+  amount: Int!
+  rate: Float!
+  fee: Int
+  
+  blockNum: Int! @search(by: [int])
+  timestamp: DateTime! @search(by: [hour])
+}
+
+# Liquidity pool position
+type LiquidityPosition {
+  id: ID!
+  provider: Account!
+  pool: LiquidityPool!
+  
+  # Position details
+  shares: Int! @search(by: [int])
+  token0Deposited: Int!
+  token1Deposited: Int!
+  
+  # Rewards
+  rewardsEarned: Int
+  impermanentLoss: Float
+  
+  createdAt: DateTime!
+  updatedAt: DateTime
+}
+
+# Liquidity pool
+type LiquidityPool {
+  pair: String! @id @search(by: [term])
+  
+  # Pool state
+  token0Reserve: Int! @search(by: [int])
+  token1Reserve: Int! @search(by: [int])
+  totalShares: Int!
+  
+  # Fee configuration
+  feeRate: Float!
+  
+  # Positions
+  positions: [LiquidityPosition] @hasInverse(field: pool)
+  
+  # Statistics
+  volume24h: Int
+  tvl: Int @search(by: [int])
+  apy: Float @search(by: [float])
+}
+
+# Node market entry
+type NodeMarket {
+  account: Account! @id
+  
+  # Bid details
+  bidRate: Int! @search(by: [int])
+  bidAmount: Int!
+  
+  # Node performance
+  wins: Int
+  attempts: Int
+  lastGood: Int
+  
+  # Validation stats
+  validationCode: String
+  report: NodeReport
+}
+
+# Node validation report
+type NodeReport {
+  id: ID!
+  node: NodeMarket!
+  
+  block: Int! @search(by: [int])
+  hash: String!
+  validations: String # Serialized validation data
+  
+  timestamp: DateTime!
+}
+
+# Power grant relationship
+type PowerGrant {
+  id: ID!
+  grantor: Account!
+  grantee: Account!
+  
+  amount: Int! @search(by: [int])
+  expiresAt: Int @search(by: [int])
+  
+  createdAt: DateTime!
+}
+
+# Delegation relationship
+type Delegation {
+  id: ID!
+  from: Account!
+  to: Account!
+  
+  amount: Int! @search(by: [int])
+  vestsPerDay: Float
+  
+  startBlock: Int!
+  endBlock: Int @search(by: [int])
+  
+  createdAt: DateTime!
+}
+
+# Transaction/Feed entry
+type Transaction {
+  id: String! @id # blocknum:txid
+  from: Account!
+  to: Account
+  
+  operation: String! @search(by: [term])
+  amount: Int
+  memo: String @search(by: [fulltext])
+  
+  blockNum: Int! @search(by: [int])
+  timestamp: DateTime! @search(by: [hour])
+  
+  # Additional data
+  data: String # JSON data
+}
+
+# Auction entry
+type Auction {
+  account: Account! @id
+  
+  amount: Int! @search(by: [int])
+  createdAt: DateTime!
+  expiresAt: DateTime @search(by: [hour])
+}
+
+# Governance proposal
+type Proposal {
+  id: String! @id
+  proposer: Account!
+  
+  type: ProposalType! @search(by: [term])
+  title: String @search(by: [fulltext])
+  description: String @search(by: [fulltext])
+  
+  # Voting
+  approvals: [Account]
+  rejections: [Account]
+  threshold: Int!
+  
+  # Status
+  status: ProposalStatus! @search(by: [term])
+  createdAt: DateTime!
+  expiresAt: DateTime @search(by: [hour])
+  executedAt: DateTime
+}
+
+enum ProposalType {
+  PARAMETER_CHANGE
+  CODE_UPDATE
+  MULTISIG_ACTION
+  CONTRACT_UPGRADE
+}
+
+enum ProposalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXECUTED
+  EXPIRED
+}
+
+# Virtual filesystem entry
+type VFSEntry {
+  path: String! @id @search(by: [term])
+  owner: Account!
+  
+  type: VFSType! @search(by: [term])
+  cid: String @search(by: [hash])
+  name: String @search(by: [term, fulltext])
+  
+  parent: VFSEntry @hasInverse(field: children)
+  children: [VFSEntry]
+  
+  # Permissions
+  public: Boolean @search
+  sharedWith: [Account]
+  
+  createdAt: DateTime!
+  updatedAt: DateTime
+}
+
+enum VFSType {
+  FILE
+  DIRECTORY
+  LINK
+}
+
+# Service types provided by accounts
+type Service {
+  id: String! @id # provider:service_type
+  provider: Account!
+  type: ServiceType! @search(by: [term])
+  
+  # Service details
+  endpoint: String @search(by: [term])
+  port: Int
+  protocol: String
+  
+  # Service-specific metadata
+  metadata: String # JSON for service-specific data
+  
+  # Performance
+  uptime: Float @search(by: [float])
+  reliability: Float @search(by: [float])
+  lastHealthCheck: DateTime
+  
+  # Status
+  active: Boolean! @search
+  startedAt: DateTime
+  
+  # Related endpoints
+  endpoints: [ServiceEndpoint] @hasInverse(field: service)
+}
+
+enum ServiceType {
+  IPFS_GATEWAY
+  IPFS_PINNING
+  API_NODE
+  STUN_TURN
+  PROOF_OF_ACCESS
+  TROLE_ENDPOINT
+  VIDEO_ENCODER
+  CDN
+  WEBSOCKET
+  RPC
+}
+
+# Service endpoints (specific URLs/addresses for services)
+type ServiceEndpoint {
+  id: ID!
+  account: Account!
+  service: Service!
+  
+  url: String! @search(by: [term])
+  region: String @search(by: [term])
+  
+  # Health metrics
+  healthy: Boolean @search
+  lastCheck: DateTime
+  responseTime: Int # milliseconds
+  
+  # Usage stats
+  requestsPerHour: Int
+  bandwidthUsed: Int
+}
+
+# Stats snapshot
+type StatsSnapshot {
+  blockNum: Int! @id
+  
+  # Supply metrics
+  tokenSupply: Int!
+  brocaSupply: Int!
+  spkSupply: Int!
+  
+  # Network metrics
+  activeNodes: Int!
+  totalStorage: Int!
+  activeContracts: Int!
+  
+  # Economic metrics
+  marketCap: Float
+  volume24h: Int
+  
+  timestamp: DateTime! @search(by: [hour])
+}
+
+# Indexes for common queries
+type AccountIndex {
+  larynxRich: [Account] @index(by: ["larynxBalance"])
+  spkRich: [Account] @index(by: ["spkBalance"])
+  activeNodes: [StorageNode] @index(by: ["reliability"])
+  topValidators: [StorageNode] @index(by: ["rewardsEarned"])
+}
+
+# Search indexes
+type SearchIndex {
+  files: [File] @index(by: ["name", "tags", "path"])
+  accounts: [Account] @index(by: ["username"])
+  proposals: [Proposal] @index(by: ["title", "description"])
+}

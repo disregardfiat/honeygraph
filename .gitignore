@@ -1,0 +1,229 @@
+# Honeygraph .gitignore
+# GraphQL API for SPK Network data
+
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# Environment and Configuration
+.env
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
+config/local.json
+config/production.json
+config/development.json
+*.env
+
+# Dgraph Data and Backups
+dgraph/
+data/
+backups/
+*.rdf
+*.rdf.gz
+*.schema
+p/
+w/
+zw/
+dgraph.*.log
+
+# Logs
+logs/
+*.log
+*.log.*
+log/
+logs/*.log
+logs/*.gz
+.pm2/
+pm2.log
+pm2-*.log
+
+# IDE and Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+*.sublime-project
+.history/
+
+# OS Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Build and Distribution
+dist/
+build/
+out/
+.cache/
+.parcel-cache/
+.next/
+.nuxt/
+.docusaurus/
+*.tsbuildinfo
+
+# Testing
+coverage/
+.nyc_output/
+test-results/
+junit.xml
+*.lcov
+.jest/
+__tests__/__snapshots__/
+
+# Temporary Files
+tmp/
+temp/
+*.tmp
+*.temp
+*.cache
+.temp/
+.tmp/
+
+# Security and Secrets
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.cer
+secrets/
+credentials/
+.secrets/
+private/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+
+# GraphQL Generated Files
+generated/
+__generated__/
+schema.graphql.json
+*.generated.ts
+*.generated.js
+
+# Documentation Build
+docs/.docusaurus/
+docs/build/
+_book/
+.grunt/
+_site/
+
+# Package Files
+*.tgz
+*.tar.gz
+*.zip
+*.7z
+*.dmg
+*.iso
+*.jar
+*.rar
+
+# Monitoring and Metrics
+.monitoring/
+metrics/
+prometheus-data/
+grafana-data/
+
+# Docker
+docker-compose.override.yml
+.dockerignore.local
+volumes/
+
+# Kubernetes
+*.kubeconfig
+helm-charts/*/charts/
+helm-charts/*/values-*.yaml
+
+# Python (if any scripts)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+
+# Backup Files
+*.bak
+*.backup
+*.old
+*.orig
+*.save
+
+# Lock Files (commit these in production projects)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# Honeygraph Specific
+sync-state.json
+last-processed-block.json
+reindex-progress/
+schema-migrations/
+query-cache/
+federation-config.local.json
+
+# Performance Profiling
+*.heapsnapshot
+*.cpuprofile
+*.0x/
+flamegraph*.html
+perf/
+
+# Development Data
+dev-data/
+sample-data/
+mock-data/
+fixtures/
+seeds/
+
+# CI/CD
+.gitlab-ci-local/
+.github/workflows/local/
+.circleci/local/
+jenkins/workspace/
+
+# Miscellaneous
+.sass-cache/
+.eslintcache
+.stylelintcache
+*.pid
+*.seed
+*.pid.lock
+.grunt/
+.lock-wscript
+.node_repl_history
+.npm/
+.yarn-integrity
+
+# Optional: Large Binary Files (if using Git LFS)
+# *.rdf
+# *.dump
+# *.tar.gz
+
+# End of Honeygraph .gitignore

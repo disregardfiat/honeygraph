@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  dgraph-zero:
+    image: dgraph/dgraph:latest
+    container_name: honeygraph-zero
+    volumes:
+      - ./data/zero:/dgraph
+    ports:
+      - "5080:5080"
+      - "6080:6080"
+    command: dgraph zero --my=dgraph-zero:5080
+    restart: unless-stopped
+    networks:
+      - honeygraph
+
+  dgraph-alpha:
+    image: dgraph/dgraph:latest
+    container_name: honeygraph-alpha
+    volumes:
+      - ./data/alpha:/dgraph
+      - ./schema:/schema
+    ports:
+      - "8180:8080"
+      - "9080:9080"
+    command: dgraph alpha --my=dgraph-alpha:7080 --zero=dgraph-zero:5080 --security whitelist=0.0.0.0/0
+    restart: unless-stopped
+    depends_on:
+      - dgraph-zero
+    networks:
+      - honeygraph
+
+  dgraph-ratel:
+    image: dgraph/ratel:latest
+    container_name: honeygraph-ratel
+    ports:
+      - "8100:8000"
+    restart: unless-stopped
+    networks:
+      - honeygraph
+
+  redis:
+    image: redis:7-alpine
+    container_name: honeygraph-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    networks:
+      - honeygraph
+
+  honeygraph-api:
+    build: .
+    container_name: honeygraph-api
+    ports:
+      - "3030:3030"
+    environment:
+      - NODE_ENV=production
+      - DGRAPH_URL=http://dgraph-alpha:9080
+      - API_PORT=3030
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      - dgraph-alpha
+      - redis
+    restart: unless-stopped
+    networks:
+      - honeygraph
+
+networks:
+  honeygraph:
+    driver: bridge

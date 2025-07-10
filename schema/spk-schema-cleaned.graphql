@@ -1,0 +1,761 @@
+# SPK Network Schema for Dgraph - Cleaned Version
+# This schema reflects the actual implementation and excludes internal operations
+
+# Core account entity with token balances and relationships
+type Account {
+  username: String! @id @search(by: [hash, term])
+  
+  # Token balances
+  larynxBalance: Int @search(by: [int]) # balances[account] - milliLARYNX
+  spkBalance: Int @search(by: [int]) # spk[account] - milliSPK
+  
+  # BROCA tracking
+  broca: String # broca[account] - "milliBRC,Base64BlockNumber"
+  brocaAmount: Int @search(by: [int]) # Parsed milliBRC from broca
+  brocaLastUpdate: Int # Parsed block number from broca
+  liquidBroca: Int @search(by: [int]) # lbroca[account] - liquid milliBroca
+  brocaPower: Int @search(by: [int]) # bpow[account] - BROCA POWER (milliBROCA)
+  
+  # Claimable balances
+  claimableLarynx: Int @search(by: [int]) # cbalances[account] - claimable milliLarynx
+  claimableBroca: Int @search(by: [int]) # cbroca[account] - claimable milliBroca
+  claimableSpk: Int @search(by: [int]) # cspk[account] - claimable milliSPK
+  
+  # Power and governance
+  power: Int @search(by: [int]) # pow[account] - milliLARYNX Power
+  spkPower: Int @search(by: [int]) # spkp[account] - milliSPK Power
+  
+  # Granting relationships
+  powerGranted: Int @search(by: [int]) # granted[account]['t'] - total granted to account
+  powerGranting: Int @search(by: [int]) # granting[account]['t'] - total granting from account
+  grantsReceived: [PowerGrant] @hasInverse(field: grantee) # granted[account][granter]
+  grantsGiven: [PowerGrant] @hasInverse(field: grantor) # granting[account][grantee]
+  
+  # Storage relationships
+  contracts: [StorageContract] @hasInverse(field: purchaser) # contract[account]
+  dexContracts: [DexContract] @hasInverse(field: owner) # contracts[account]
+  proffersSent: [Proffer] @hasInverse(field: from) # proffer[to][from]
+  proffersReceived: [Proffer] @hasInverse(field: to) # proffer[to][from]
+  
+  # Node operations
+  nodeMarketBid: NodeMarketBid @hasInverse(field: account) # market.node[account]
+  storageBroca: Int @search(by: [int]) # sbroca[account] - storage node points
+  validatorBroca: Int @search(by: [int]) # vbroca[account] - validator node points
+  
+  # Services
+  services: [Service] @hasInverse(field: provider) # services[account][type][serviceID]
+  
+  # Voting and governance
+  spkVote: String # spkVote[account] - "lastBlock,validatorRankedChoice"
+  spkVoteLastBlock: Int # Parsed last block from spkVote
+  spkVoteChoices: [ValidatorChoice] # Parsed ranked validator choices
+  spkBlock: Int # spkb[account] - spk block
+  
+  # Settings
+  noMention: Boolean @search # nomention[account] - decline notifications
+  
+  # Authorities
+  publicKey: String @search(by: [hash]) # authorities[account]
+  
+  # NFT ownership (keeping for compatibility)
+  nfts: [NFT] @hasInverse(field: owner)
+  nftSets: [NFTSet] @hasInverse(field: creator)
+  
+  # Metadata
+  createdAt: DateTime
+  lastActivity: DateTime @search(by: [hour])
+}
+
+# Storage contract (from contract[purchaser:type:block-txid])
+type StorageContract {
+  id: String! @id # Full contract ID: purchaser:type:block-txid
+  
+  # Contract identification
+  purchaser: Account! # f - purchasing account
+  contractType: Int! @search(by: [int]) # From ID parsing (0 = storage, etc)
+  blockNumber: Int! @search(by: [int]) # From ID parsing
+  txid: String! @search(by: [hash]) # From ID parsing
+  
+  # Contract details
+  authorized: Int! @search(by: [int]) # a - authorized upload amount in bytes
+  broker: String! @search(by: [term]) # b - broker/upload node
+  status: Int! @search(by: [int]) # c - contract status code (3 = active)
+  power: Int! @search(by: [int]) # p - payout multiplier for nodes
+  refunded: Int @search(by: [int]) # r - refunded BROCA amount
+  utilized: Int! @search(by: [int]) # u - utilized bytes (sum of file sizes)
+  verified: Int! @search(by: [int]) # v - verified size (approaches u)
+  
+  # File list (parsed from df object)
+  files: [ContractFile] @hasInverse(field: contract)
+  fileCount: Int @search(by: [int])
+  
+  # Expiration (parsed from e field)
+  expiresBlock: Int! @search(by: [int])
+  expiresChronId: String # Chron ID for memory management
+  
+  # Extensions (parsed from ex string)
+  extensions: [ContractExtension] @hasInverse(field: contract)
+  
+  # Storage nodes (parsed from n object)
+  storageNodes: [StorageNodeAssignment] @hasInverse(field: contract)
+  nodeTotal: Int! @search(by: [int]) # nt - total number of nodes
+  
+  # Tracking whether contract is understored
+  isUnderstored: Boolean @search # Computed: nodeTotal < power
+  
+  # Metadata (parsed from m field)
+  metadata: ContractMetadata
+  
+  # Validation tracking
+  lastValidated: Int @search(by: [int]) # Block number of last validation
+  
+  # Computed status
+  statusText: String @search(by: [term]) # Human-readable status
+}
+
+# Individual file within a contract (expanded from df entries)
+type ContractFile {
+  id: String! @id # contract_id:cid format
+  contract: StorageContract!
+  
+  cid: String! @search(by: [hash])
+  size: Int! @search(by: [int])
+  
+  # Expanded metadata
+  name: String @search(by: [term, fulltext])
+  mimeType: String @search(by: [term])
+  uploadedAt: DateTime @search(by: [hour])
+  
+  # Organization
+  path: String @search(by: [term]) # Virtual path within contract
+  tags: [String] @search(by: [term])
+  
+  # Validation
+  lastValidated: DateTime
+  validationCount: Int
+}
+
+# Storage node assignment (expanded from n object)
+type StorageNodeAssignment {
+  id: String! @id # contract_id:node_number format
+  contract: StorageContract!
+  storageAccount: Account! # The account storing the files
+  nodeNumber: String! # The key from contract.n (e.g., "1", "2")
+  
+  # Assignment details
+  assignedBlock: Int @search(by: [int])
+  isActive: Boolean @search
+}
+
+# Contract metadata (parsed from m field)
+type ContractMetadata {
+  id: ID!
+  contract: StorageContract! @hasInverse(field: metadata)
+  
+  # Contract settings from encoded data
+  autoRenew: Boolean @search
+  encrypted: Boolean @search
+  
+  # Encryption key sharing (parsed from encData)
+  encryptionKeys: [EncryptionKey] @hasInverse(field: metadata)
+  
+  # Folder structure for file organization
+  folderStructure: String # JSON map of index to path
+  
+  # Raw metadata for reference
+  encData: String
+  rawMetadata: String
+}
+
+# Encryption key sharing record
+type EncryptionKey {
+  id: ID!
+  metadata: ContractMetadata!
+  
+  # Who has access
+  sharedWith: Account! @search(by: [hash])
+  
+  # Encrypted key data
+  encryptedKey: String
+  keyType: String # Type of encryption used
+  
+  # When shared
+  sharedBlock: Int @search(by: [int])
+}
+
+# Contract extension record (parsed from ex string "buyer:amount:blocks")
+type ContractExtension {
+  id: ID!
+  contract: StorageContract!
+  
+  paidBy: Account! # Who paid for extension
+  paidAmount: Int! @search(by: [int]) # Amount paid in BROCA
+  blocksPaid: String! # Block range like "97072588-97938326"
+  startBlock: Int! @search(by: [int]) # Parsed start block
+  endBlock: Int! @search(by: [int]) # Parsed end block
+}
+
+# Validation event for history tracking
+type ValidationEvent {
+  id: ID!
+  contract: StorageContract!
+  validator: Account!
+  
+  blockNum: Int! @search(by: [int])
+  timestamp: DateTime! @search(by: [hour])
+  
+  success: Boolean! @search
+  filesChecked: Int
+  responseTime: Int # milliseconds
+  
+  # Proof details if needed
+  challenge: String
+  response: String
+}
+
+enum ContractStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+# Storage provider relationship (from contract.n entries)
+type StorageProvided {
+  id: ID!
+  provider: Account!
+  contract: StorageContract!
+  nodeKey: String! # Base64 key from contract.n
+  joinedBlock: Int
+}
+
+# Node market data (from market.node[account])
+type NodeMarketBid {
+  account: Account! @id
+  
+  # Credits and attempts
+  ccr: Int @search(by: [int]) # CCR - Credits for Consensus Reports
+  attempts: Int @search(by: [int]) # Overall consensus reports
+  
+  # Registration and limits
+  bidRate: Int # Not used currently
+  burned: Int @search(by: [int]) # Registration cost in milliLARYNX
+  contracts: Int # Not used
+  dm: Int # dex max - not used
+  ds: Int # dex slope - not used
+  dv: Int # dv field
+  escrows: Int # Not used
+  moved: Int # Not used
+  strikes: Int # Not used
+  
+  # Node info
+  domain: String @search(by: [term]) # API endpoint domain
+  self: String @search(by: [term]) # Node account name
+  validationCode: String @search(by: [hash]) # val_code - registered validator code
+  
+  # Health and status
+  lastGood: Int @search(by: [int]) # Last accepted consensus block (distance from head = health)
+  
+  # Performance metrics
+  wins: Int @search(by: [int]) # Total wins (consensus while holding keys)
+  yays: Int @search(by: [int]) # Total yays (consensus participation)
+  todayWins: Int @search(by: [int]) # tw - today's wins
+  todayYays: Int @search(by: [int]) # ty - today's yays
+  
+  # Voting
+  votes: Int @search(by: [int]) # Ranked choice validator votes received
+  
+  # Verification
+  verifiedSignatures: Int @search(by: [int]) # vS - total verified signatures
+  
+  # Report data
+  report: NodeReport # Parsed consensus report
+  
+  # Computed fields
+  isHealthy: Boolean @search # Computed from lastGood distance
+  consensusRate: Float # wins/attempts ratio
+}
+
+# DEX Market for a trading pair (from dex[hbd/hive])
+type DexMarket {
+  id: String! @id # token:quote format (e.g., "LARYNX:HBD")
+  
+  # Token being traded
+  token: String! @search(by: [term]) # LARYNX, SPK, or BROCA
+  tokenType: String! @search(by: [term]) # dex, dexb, or dexs
+  
+  # Quote currency
+  quoteCurrency: String! @search(by: [term]) # HBD or HIVE
+  
+  # Order books (CSV strings)
+  buyBook: String # CSV of buy order IDs by price
+  sellBook: String # CSV of sell order IDs by price
+  
+  # Current tick size
+  tick: String # Price increment (e.g., "1.0")
+  
+  # Orders
+  buyOrders: [DexOrder] @hasInverse(field: market)
+  sellOrders: [DexOrder] @hasInverse(field: market)
+  
+  # OHLC data
+  ohlcDays: [OHLCData] @hasInverse(field: market)
+  
+  # Stats
+  lastPrice: Float
+  volume24h: Int
+  high24h: Float
+  low24h: Float
+}
+
+# DEX order (from dex[pair][hbd/hive][sellOrders/buyOrders][orderId])
+type DexOrder {
+  id: String! @id # Full order ID including price and txid
+  market: DexMarket!
+  
+  # Order details
+  rate: Float! @search(by: [float]) # Price per token
+  amount: Int! @search(by: [int]) # Amount in quote currency (milliHBD/milliHIVE)
+  tokenAmount: Int! @search(by: [int]) # Calculated token amount
+  fee: Int! @search(by: [int]) # Fee in token (milliLARYNX/milliSPK/milliBROCA)
+  
+  # Order metadata
+  from: Account! @search(by: [hash]) # Account placing order
+  type: String! @search(by: [term]) # e.g., "hive:sell", "hbd:buy"
+  orderType: OrderType! @search(by: [term]) # BUY or SELL
+  
+  # Transaction info
+  txid: String! @search(by: [hash]) # Internal transaction ID
+  hiveId: String @search(by: [hash]) # Hive blockchain txid
+  block: Int! @search(by: [int]) # Block when order was opened
+  
+  # Amounts by currency
+  hbd: Int # Amount in milliHBD
+  hive: Int # Amount in milliHIVE
+  
+  # Expiration
+  expirePath: String # e.g., "87216770:QmXHDWuXJMSUjBBnpBYymyfb6uMP6zsGM6gkLJFDJgorum"
+  expireBlock: Int @search(by: [int]) # Parsed expire block
+  expireChronId: String # Chron ID for expiration
+  
+  # Status and fills
+  status: OrderStatus! @search(by: [term])
+  filled: Int @search(by: [int]) # Amount filled so far
+  remaining: Int @search(by: [int]) # Amount remaining
+  partialFills: [PartialFill] @hasInverse(field: order) # History of partial fills
+  
+  # Matching info
+  matchedOrders: [String] # Order IDs this was matched against
+  lastFillBlock: Int @search(by: [int]) # Block of last partial fill
+  
+  createdAt: DateTime @search(by: [hour])
+  updatedAt: DateTime @search(by: [hour])
+}
+
+# OHLC (Open-High-Low-Close) data per day (28800 blocks)
+type OHLCData {
+  id: String! @id # market:blockBucket format
+  market: DexMarket!
+  
+  # Block bucket (day = 28800 blocks)
+  blockBucket: Int! @search(by: [int]) # Starting block of the day
+  
+  # Price data
+  open: Float! @search(by: [float]) # o - Opening price
+  high: Float! @search(by: [float]) # t - Top/High price
+  low: Float! @search(by: [float]) # b - Bottom/Low price
+  close: Float! @search(by: [float]) # c - Closing price
+  
+  # Volume data
+  volumeQuote: Int! @search(by: [int]) # d - Volume in HBD/HIVE
+  volumeToken: Int! @search(by: [int]) # v - Volume in token
+  
+  # Time
+  timestamp: DateTime @search(by: [day])
+}
+
+enum OrderType {
+  BUY
+  SELL
+}
+
+enum OrderStatus {
+  OPEN
+  PARTIAL
+  FILLED
+  EXPIRED
+  CANCELLED
+}
+
+# Partial fill record for order execution history
+type PartialFill {
+  id: String! @id # order:block:sequence format
+  order: DexOrder!
+  
+  # Fill details
+  amountFilled: Int! @search(by: [int]) # Amount filled in this execution
+  tokensFilled: Int! @search(by: [int]) # Tokens transferred in this execution
+  executionPrice: Float! @search(by: [float]) # Actual execution price
+  
+  # Matched order info
+  matchedOrderId: String! # Order ID this was matched against
+  matchedAccount: Account! # Account on the other side of the trade
+  
+  # Execution details
+  block: Int! @search(by: [int]) # Block when fill occurred
+  txid: String! @search(by: [hash]) # Transaction ID of the fill
+  
+  # Fee charged on this fill
+  feeCharged: Int! @search(by: [int]) # Fee in token units
+  
+  timestamp: DateTime! @search(by: [hour])
+}
+
+# Order history entry (for tracking order state changes)
+type OrderHistory {
+  id: String! @id # order:block format
+  order: DexOrder!
+  
+  # State change
+  previousStatus: OrderStatus!
+  newStatus: OrderStatus!
+  
+  # Details
+  block: Int! @search(by: [int])
+  event: String! @search(by: [term]) # PLACED, PARTIALLY_FILLED, FILLED, EXPIRED, CANCELLED
+  details: String # Additional details about the state change
+  
+  timestamp: DateTime! @search(by: [hour])
+}
+
+# NFT (from NFT operations)
+type NFT {
+  uid: String! @id @search(by: [hash])
+  owner: Account!
+  set: NFTSet
+  
+  # NFT properties
+  name: String @search(by: [term, fulltext])
+  description: String @search(by: [fulltext])
+  image: String
+  
+  # Trading
+  forSale: Boolean @search
+  price: Int @search(by: [int])
+  
+  # Metadata
+  properties: String # JSON properties
+  createdBlock: Int @search(by: [int])
+}
+
+# NFT Set (from set operations)
+type NFTSet {
+  uid: String! @id @search(by: [hash])
+  creator: Account!
+  
+  name: String! @search(by: [term, fulltext])
+  description: String @search(by: [fulltext])
+  
+  # Set configuration
+  maxSupply: Int
+  currentSupply: Int
+  mintPrice: Int @search(by: [int])
+  royaltyRate: Float
+  
+  # NFTs in set
+  nfts: [NFT] @hasInverse(field: set)
+  
+  createdBlock: Int @search(by: [int])
+}
+
+# Power grant relationship (from granted[grantee][grantor] and granting[grantor][grantee])
+type PowerGrant {
+  id: String! @id # grantor:grantee format
+  grantor: Account!
+  grantee: Account!
+  
+  amount: Int! @search(by: [int]) # milliLARYNX granted
+  createdBlock: Int! @search(by: [int])
+  lastUpdate: Int @search(by: [int])
+}
+
+# DEX contract for open orders (from contracts[account])
+type DexContract {
+  id: String! @id # account:contractId format  
+  owner: Account!
+  
+  # Contract details
+  pair: String! @search(by: [term])
+  orderType: String! @search(by: [term])
+  orders: [DexOrder] @hasInverse(field: contract)
+  
+  createdBlock: Int @search(by: [int])
+  lastActivity: Int @search(by: [int])
+}
+
+# Upload proffer (from proffer[to][from][type])
+type Proffer {
+  id: String! @id # to:from:type format
+  from: Account!
+  to: Account!
+  
+  profferType: Int! @search(by: [int]) # 0 or 1
+  contract: StorageContract # Reference to created contract
+  
+  createdBlock: Int @search(by: [int])
+  status: String @search(by: [term])
+}
+
+# Validator information (from val[val_code])
+type Validator {
+  id: String! @id # val_code
+  validationCode: String! @search(by: [hash])
+  
+  # Ranked choice DPoS voting amount
+  votingPower: Int! @search(by: [int])
+  voters: [ValidatorVote] @hasInverse(field: validator)
+  
+  lastActivity: Int @search(by: [int])
+}
+
+# Validator vote relationship
+type ValidatorVote {
+  id: String! @id # account:validator format
+  account: Account!
+  validator: Validator!
+  
+  rank: Int! @search(by: [int]) # Position in ranked choice
+  power: Int! @search(by: [int]) # Voting power allocated
+  
+  lastUpdate: Int @search(by: [int])
+}
+
+# Validator choice in ranked voting
+type ValidatorChoice {
+  rank: Int! # Position in ranked choice (1st, 2nd, 3rd, etc)
+  validatorCode: String! # Two-character validator code
+  validatorName: String # Resolved validator name from node lookup
+}
+
+# Node consensus report
+type NodeReport {
+  id: ID!
+  node: NodeMarketBid! @hasInverse(field: report)
+  
+  # Block information
+  block: Int! @search(by: [int]) # For block number
+  blockNum: Int! @search(by: [int]) # Sent on block number
+  
+  # Consensus data
+  hash: String! @search(by: [hash]) # Consensus vote hash
+  transactionId: String! @search(by: [hash]) # Transaction ID of report
+  
+  # Signature data
+  signature: String! # sig - Signature for multiSig wallet
+  sigBlock: Int! @search(by: [int]) # sig_block - Which multiSig transaction
+  
+  # Version info
+  version: String! @search(by: [term]) # Honeycomb version (e.g., "v1.5.0-t3")
+  
+  # Unused fields (kept for completeness)
+  witness: String # Witness of block (not used)
+  prand: String # Pseudo-random value (not used)
+  hbdCheck: Int # HBD check (not used)
+  hbdOffset: Int # HBD offset (not used) 
+  hiveCheck: Int # Hive check (not used)
+  hiveOffset: Int # Hive offset (not used)
+  
+  # Metadata
+  reportedAt: DateTime @search(by: [hour])
+}
+
+# Service tracking (from services[account][type][serviceID])
+type Service {
+  id: String! @id # account:type:serviceID format
+  provider: Account! # Account that registered the service
+  serviceType: String! @search(by: [term]) # Service type (IPFS, MARKET, etc)
+  serviceId: String! @search(by: [term]) # Unique service ID
+  
+  # Service details (from service object)
+  api: String @search(by: [term]) # a - API endpoint URL
+  by: String @search(by: [term]) # b - registered by
+  cost: Int @search(by: [int]) # c - cost in milliLARYNX
+  d: Int # d field
+  enabled: Int # e - enabled flag (1 = enabled)
+  f: Int # f field
+  ipfsId: String @search(by: [hash]) # i - IPFS peer ID or service identifier
+  memo: String @search(by: [fulltext]) # m - memo/description
+  s: Int # s field
+  w: Int # w field
+  
+  # Computed fields
+  active: Boolean! @search # Based on enabled flag
+  createdBlock: Int @search(by: [int])
+  lastCheck: DateTime
+}
+
+# Service list by type (from list[serviceType])
+type ServiceList {
+  id: String! @id # serviceType
+  serviceType: String! @search(by: [term])
+  providers: [Account] # List of accounts providing this service
+  count: Int @search(by: [int])
+  lastUpdate: Int
+}
+
+enum ServiceType {
+  IPFS_GATEWAY
+  IPFS_PINNING
+  API_NODE
+  PROOF_OF_ACCESS
+  STORAGE_NODE
+  STUN_TURN
+  TROLE_ENDPOINT
+  VIDEO_ENCODER
+  CDN
+  WEBSOCKET
+  RPC
+}
+
+# System statistics snapshot
+type SystemStats {
+  blockNum: Int! @id
+  
+  # Token supplies
+  larynxSupply: Int!
+  spkSupply: Int!
+  brocaSupply: Int!
+  
+  # Network metrics
+  activeNodes: Int!
+  activeContracts: Int!
+  totalStorage: Int!
+  
+  # Economic metrics
+  dexVolume24h: Int
+  
+  timestamp: DateTime! @search(by: [hour])
+}
+
+# Transaction entry parsed from feed (preserves history even after feed cleanup)
+type Transaction {
+  id: String! @id # blocknum:txid format
+  blockNum: Int! @search(by: [int])
+  txId: String! @search(by: [hash])
+  isVirtualOp: Boolean @search # Virtual operations use vop_ prefix
+  
+  # Operation classification
+  operationType: String! @search(by: [term]) # Raw operation type from parser
+  category: TransactionCategory! @search(by: [term])
+  
+  # Common fields
+  from: Account # Primary account (sender/initiator)
+  to: Account # Recipient account (if applicable)
+  amount: Int # Amount in milli-units (if applicable)
+  token: String @search(by: [term]) # Token type (if applicable)
+  memo: String @search(by: [fulltext]) # Original feed message
+  
+  # Category-specific details
+  dexDetails: DexTransactionDetails
+  nftDetails: NFTTransactionDetails
+  powerDetails: PowerTransactionDetails
+  storageDetails: StorageTransactionDetails
+  
+  timestamp: DateTime! @search(by: [hour])
+}
+
+# DEX transaction details
+type DexTransactionDetails {
+  orderType: OrderType # BUY or SELL
+  tradeType: String # For market orders
+  token: String!
+  tokenAmount: Int
+  quoteCurrency: String
+  quoteAmount: Int
+}
+
+# NFT transaction details
+type NFTTransactionDetails {
+  nftId: String! @search(by: [hash])
+  from: String
+  to: String
+  amount: Int # For sales/auctions
+  token: String # Payment token
+  setName: String @search(by: [term])
+}
+
+# Power transaction details
+type PowerTransactionDetails {
+  action: String! # POWER_UP, POWER_DOWN, GOV_LOCK, etc.
+  amount: Int!
+  token: String!
+  weeks: Int # For governance locks
+}
+
+# Storage transaction details
+type StorageTransactionDetails {
+  contractId: String! @search(by: [hash])
+  action: String!
+  uploadType: String # DIRECT or BUNDLE
+  cancelledBy: String # For cancellations
+  contractIds: [String] # For metadata updates
+  cids: [String] # For file deletions
+}
+
+enum TransactionCategory {
+  TOKEN_TRANSFER
+  TOKEN_CLAIM
+  PROMOTION
+  DEX_ORDER
+  DEX_TRADE
+  DEX_CANCEL
+  NFT_MINT
+  NFT_TRANSFER
+  NFT_SALE
+  NFT_AUCTION_END
+  POWER_UP
+  POWER_DOWN
+  GOV_LOCK
+  GOV_EXTEND
+  GOV_UNLOCK
+  GOV_WITHDRAW
+  DELEGATION_ADD
+  DELEGATION_REMOVE
+  STORAGE_UPLOAD
+  STORAGE_CANCEL
+  STORAGE_META_UPDATE
+  STORAGE_FILE_DELETE
+  CERTIFICATE_SIGN
+  PROPOSAL_CREATE
+  PROPOSAL_VOTE
+  PROPOSAL_DELETE
+  PROPOSAL_APPROVE
+  VOTE
+  ERROR
+  OTHER
+  UNKNOWN
+}
+
+# Order cancellation record (from DEX deletions)
+type OrderCancellation {
+  id: ID!
+  orderId: String! @search(by: [hash])
+  market: DexMarket!
+  orderType: OrderType!
+  cancelledAt: Int! @search(by: [int]) # Block number
+  timestamp: DateTime! @search(by: [hour])
+}
+
+# Indexes for common queries
+type _Indexes {
+  # Rich lists
+  larynxRichList: [Account] @index(by: ["larynxBalance"])
+  spkRichList: [Account] @index(by: ["spkBalance"])
+  
+  # Active participants
+  activeNodes: [NodeMarketBid] @index(by: ["bidRate"])
+  activeContracts: [StorageContract] @index(by: ["status", "expiresBlock"])
+  
+  # Recent activity
+  recentTransactions: [Transaction] @index(by: ["timestamp", "category"])
+  userTransactions: [Transaction] @index(by: ["from.username", "to.username"])
+}
