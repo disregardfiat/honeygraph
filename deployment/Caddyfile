@@ -1,0 +1,106 @@
+# Caddy configuration for Honeygraph
+# Replace honeygraph.example.com with your actual domain
+
+# Main Honeygraph API
+honeygraph.example.com {
+    # Enable compression
+    encode gzip
+
+    # Security headers
+    header {
+        X-Frame-Options "SAMEORIGIN"
+        X-Content-Type-Options "nosniff"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "no-referrer-when-downgrade"
+        Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'"
+    }
+
+    # WebSocket support
+    @websocket {
+        header Connection *Upgrade*
+        header Upgrade websocket
+    }
+    handle @websocket {
+        reverse_proxy localhost:3030
+    }
+
+    # Main API proxy
+    handle {
+        reverse_proxy localhost:3030 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # Logging
+    log {
+        output file /var/log/caddy/honeygraph_access.log
+        format json
+    }
+}
+
+# Dgraph Alpha (GraphQL endpoint)
+dgraph.honeygraph.example.com {
+    encode gzip
+    
+    reverse_proxy localhost:9080 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    log {
+        output file /var/log/caddy/dgraph_access.log
+        format json
+    }
+}
+
+# Dgraph Ratel (UI)
+ratel.honeygraph.example.com {
+    encode gzip
+    
+    reverse_proxy localhost:8100 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    log {
+        output file /var/log/caddy/ratel_access.log
+        format json
+    }
+}
+
+# Alternative: Single domain with path-based routing
+# honeygraph.example.com {
+#     encode gzip
+#
+#     # API at root
+#     handle /api/* {
+#         reverse_proxy localhost:3030
+#     }
+#
+#     # WebSocket
+#     @websocket {
+#         path /ws
+#         header Connection *Upgrade*
+#         header Upgrade websocket
+#     }
+#     handle @websocket {
+#         reverse_proxy localhost:3030
+#     }
+#
+#     # Dgraph GraphQL at /graphql
+#     handle /graphql* {
+#         reverse_proxy localhost:9080
+#     }
+#
+#     # Ratel UI at /admin
+#     handle /admin* {
+#         uri strip_prefix /admin
+#         reverse_proxy localhost:8100
+#     }
+#
+#     # Default to API
+#     handle {
+#         reverse_proxy localhost:3030
+#     }
+# }
