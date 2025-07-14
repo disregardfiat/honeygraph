@@ -9,18 +9,18 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm config set registry https://registry.npmmirror.com && \
-    npm install --production --legacy-peer-deps
+RUN npm config set strict-ssl false && npm install --omit=dev
 
 # Copy application code
 COPY . .
 
-# Create logs directory
-RUN mkdir -p /app/logs
+# Create necessary directories
+RUN mkdir -p /app/logs /app/data/honeygraph
 
 # Run as non-root user
 RUN groupadd -g 1001 nodejs && \
-    useradd -u 1001 -g nodejs -s /bin/bash -m nodejs
+    useradd -u 1001 -g nodejs -s /bin/bash -m nodejs && \
+    chown -R nodejs:nodejs /app
 USER nodejs
 
 EXPOSE 3030

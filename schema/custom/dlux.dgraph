@@ -1,0 +1,51 @@
+# DLUX Token Custom Schema Extensions
+
+# DLUX-specific types
+type DLUXPowerUp {
+  account: string @index(hash) .
+  amount: string .
+  powerDownRate: string .
+  lastClaim: datetime .
+}
+
+type DLUXContent {
+  author: string @index(hash) .
+  permlink: string @index(hash) .
+  ipfsHash: string @index(hash) .
+  featured: bool .
+  promoted: bool .
+  promotionAmount: string .
+}
+
+type DLUXNode {
+  account: string @index(hash) .
+  domain: string @index(hash) .
+  bidRate: int .
+  lastGood: int .
+  attempts: int .
+  successes: int .
+  strikes: int .
+  burned: bool .
+}
+
+# DLUX-specific predicates
+DLUXPowerUp.account: string @index(hash) .
+DLUXPowerUp.amount: string .
+DLUXPowerUp.powerDownRate: string .
+DLUXPowerUp.lastClaim: datetime .
+
+DLUXContent.author: string @index(hash) .
+DLUXContent.permlink: string @index(hash) .
+DLUXContent.ipfsHash: string @index(hash) .
+DLUXContent.featured: bool .
+DLUXContent.promoted: bool .
+DLUXContent.promotionAmount: string .
+
+DLUXNode.account: string @index(hash) .
+DLUXNode.domain: string @index(hash) .
+DLUXNode.bidRate: int .
+DLUXNode.lastGood: int .
+DLUXNode.attempts: int .
+DLUXNode.successes: int .
+DLUXNode.strikes: int .
+DLUXNode.burned: bool .

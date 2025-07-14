@@ -7,7 +7,11 @@ import { createCheckpointRoutes } from './checkpoints.js';
 import { createSyncRoutes } from './sync.js';
 import { createSPKRoutes } from './spk.js';
 import { createFileSystemRoutes } from './filesystem.js';
+import { createMultiTokenRoutes } from './multi-token.js';
+import { createGraphQLRoutes } from './graphql.js';
 import { createDataTransformer } from '../lib/data-transformer.js';
+import { createAuthRoutes } from './auth.js';
+import { authenticateHiveNode } from '../middleware/hive-auth.js';
 
 // Validation schemas
 const schemas = {
@@ -55,12 +59,20 @@ export function validate(schema) {
   };
 }
 
-export function createRouter({ dgraphClient, forkManager, replicationQueue, zfsCheckpoints, peerSync }) {
+export function createRouter({ dgraphClient, forkManager, replicationQueue, zfsCheckpoints, peerSync, networkManager }) {
   const router = Router();
-  const dataTransformer = createDataTransformer(dgraphClient);
+  const dataTransformer = createDataTransformer(dgraphClient, networkManager);
 
-  // Mount sub-routers
-  router.use('/replicate', createReplicationRoutes({ 
+  // Authentication routes (no auth required for these)
+  router.use('/auth', createAuthRoutes({ dgraphClient }));
+  
+  // Apply Hive authentication middleware to protected routes if enabled
+  const hiveAuth = authenticateHiveNode({ 
+    requireAuthorization: process.env.REQUIRE_HIVE_AUTH === 'true' 
+  });
+
+  // Mount sub-routers with optional authentication
+  router.use('/replicate', hiveAuth, createReplicationRoutes({ 
     dgraphClient, 
     forkManager, 
     replicationQueue,
@@ -105,6 +117,23 @@ export function createRouter({ dgraphClient, forkManager, replicationQueue, zfsC
     schemas,
     validate 
   }));
+  
+  // Network-based multi-token routes (if manager is provided)
+  if (networkManager) {
+    const multiTokenRouter = createMultiTokenRoutes({
+      networkManager,
+      schemas,
+      validate
+    });
+    
+    // Mount both /token and /network routes
+    router.use('/', multiTokenRouter);
+    
+    // GraphQL endpoint
+    router.use('/graphql', createGraphQLRoutes({
+      networkManager
+    }));
+  }
 
   // Root endpoint
   router.get('/', (req, res) => {
@@ -115,7 +144,14 @@ export function createRouter({ dgraphClient, forkManager, replicationQueue, zfsC
         replication: '/api/replicate',
         query: '/api/query',
         admin: '/api/admin',
-        health: '/health'
+        health: '/health',
+        networks: networkManager ? '/api/networks' : undefined,
+        tokens: networkManager ? '/api/tokens' : undefined,
+        networkInfo: networkManager ? '/api/network/{prefix}/info' : undefined,
+        tokenInfo: networkManager ? '/api/token/{token}/info' : undefined,
+        networkQuery: networkManager ? '/api/network/{prefix}/query' : undefined,
+        tokenQuery: networkManager ? '/api/token/{token}/query' : undefined,
+        graphql: networkManager ? '/api/graphql' : undefined
       }
     });
   });

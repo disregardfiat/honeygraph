@@ -19,22 +19,66 @@ honeycomb-spkcc nodes → Honeygraph API → Bull Queue → Dgraph
                                           Read Clients
 ```
 
-## Quick Start
+## Installation
 
-1. **Start the services**:
+### Prerequisites
+- Docker and Docker Compose
+- Node.js 18+ (for local development)
+- Git
+
+### Quick Start
+
+1. **Clone the repository**:
+```bash
+git clone https://github.com/your-org/honeygraph.git
+cd honeygraph
+```
+
+2. **Configure environment**:
+```bash
+cp .env.example .env
+# Edit .env to set your configuration
+```
+
+3. **Install dependencies** (for local development):
+```bash
+npm install
+```
+
+4. **Start the services**:
 ```bash
 docker-compose up -d
 ```
 
-2. **Initialize the schema**:
+5. **Initialize the schema**:
 ```bash
 docker-compose exec honeygraph-api npm run init-schema
 ```
 
-3. **Check health**:
+6. **Check health**:
 ```bash
 curl http://localhost:3030/health
 ```
+
+### Authentication Setup
+
+To enable Hive-based authentication for honeycomb nodes:
+
+1. **Edit your `.env` file**:
+```bash
+# Enable authentication
+REQUIRE_HIVE_AUTH=true
+
+# Optional: Whitelist specific accounts
+AUTHORIZED_HONEYCOMB_NODES=your-node1,your-node2
+```
+
+2. **Restart the services**:
+```bash
+docker-compose restart honeygraph-api
+```
+
+3. **Configure your honeycomb node** to authenticate (see [Authentication Guide](docs/AUTHENTICATION.md))
 
 ## API Endpoints
 
@@ -203,3 +247,43 @@ curl -X POST http://localhost:3030/api/checkpoints/clone/1000 \
 - Dedicated ZFS dataset for Dgraph
 - Privileged container access (for ZFS commands)
 - Sudo permissions for ZFS operations
+## Security
+
+- Rate limiting is applied to all endpoints
+- CORS is configured for cross-origin requests
+- Helmet.js provides security headers
+- Input validation using Joi schemas
+- Hive-based authentication for honeycomb nodes
+
+### Hive Authentication
+
+Honeygraph supports Hive blockchain-based authentication for honeycomb nodes:
+
+1. **Enable Authentication**: Set `REQUIRE_HIVE_AUTH=true` in your environment
+2. **Authorize Specific Nodes**: Set `AUTHORIZED_HONEYCOMB_NODES=account1,account2` (optional)
+3. **WebSocket Authentication**: Nodes must sign a challenge with their Hive active key
+4. **HTTP Authentication**: Use signed headers for REST API calls
+
+Example WebSocket authentication flow:
+```javascript
+// Honeycomb node receives auth challenge
+{ type: 'auth_required', challenge: { timestamp, nonce, nodeId } }
+
+// Node signs and responds
+const message = JSON.stringify({ account, challenge, timestamp });
+const signature = privateKey.sign(sha256(message));
+ws.send({ type: 'auth_response', account, signature, message });
+
+// On success
+{ type: 'auth_success', account, nodeId }
+```
+
+Example HTTP authentication:
+```javascript
+// Sign request with Hive private key
+const headers = {
+  'X-Hive-Account': 'your-account',
+  'X-Hive-Signature': signature,
+  'X-Hive-Timestamp': timestamp
+};
+```

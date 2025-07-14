@@ -1,0 +1,365 @@
+# GraphQL Schema for Honeycomb API endpoints
+# This schema represents the native honeycomb API as GraphQL queries
+
+scalar JSON
+scalar DateTime
+
+# Root query type
+type Query {
+  # Token-specific queries - prefix with token symbol
+  token(symbol: String!): TokenQuery!
+  
+  # Global queries
+  allTokens: [TokenInfo!]!
+}
+
+type TokenQuery {
+  # Core token info
+  info: TokenInfo!
+  stats: TokenStats!
+  
+  # User queries
+  user(username: String!): User
+  users(limit: Int = 100, offset: Int = 0): [User!]!
+  
+  # Market/DEX queries
+  dex: DEX!
+  orderbook(pair: TradingPair!, depth: Int = 50): OrderBook!
+  tickers: [Ticker!]!
+  trades(pair: TradingPair!, limit: Int = 50, type: TradeType): [Trade!]!
+  
+  # NFT queries
+  nfts(user: String): NFTCollection
+  sets: [NFTSet!]!
+  set(name: String!): NFTSet
+  item(set: String!, uid: String!): NFTItem
+  auctions(set: String): [Auction!]!
+  sales(set: String): [Sale!]!
+  
+  # Content queries
+  posts: PostsInfo!
+  post(author: String!, permlink: String!): Post
+  promotedPosts(limit: Int = 10, offset: Int = 0): [Post!]!
+  trendingPosts(limit: Int = 10, offset: Int = 0): [Post!]!
+  newPosts(limit: Int = 10, offset: Int = 0): [Post!]!
+  authorPosts(author: String!, limit: Int = 10, offset: Int = 0): [Post!]!
+  
+  # Node/network queries
+  markets: MarketsInfo!
+  runners: [Runner!]!
+  queue: QueueInfo!
+  protocol: ProtocolInfo!
+  
+  # Smart contract queries
+  scp(id: String): JSON
+  sca: JSON
+  
+  # Transaction queries
+  txStatus(txid: String!): TransactionStatus!
+  pending: PendingInfo!
+}
+
+# Core Types
+type TokenInfo {
+  symbol: String!
+  name: String!
+  precision: Int!
+  maxSupply: String!
+  currentSupply: String!
+  icon: String
+  description: String
+}
+
+type TokenStats {
+  hashLastIBlock: String!
+  lastIBlock: Int!
+  lastBlock: Int!
+  tokenSupply: String!
+  interestRate: Float!
+  nodeQty: Int!
+  userCount: Int!
+  marketCap: String
+  volume24h: String
+  behind: Int!
+  realtime: Boolean!
+}
+
+type User {
+  username: String!
+  balance: String!
+  poweredUp: String
+  poweringDown: String
+  delegatedTo: String
+  delegatedFrom: String
+  nfts: NFTCollection
+  posts: [Post!]!
+  gov: UserGov
+  rewards: UserRewards
+}
+
+type UserGov {
+  weight: String!
+  votes: [Vote!]!
+}
+
+type UserRewards {
+  pending: String!
+  claimed: String!
+  lastClaim: DateTime
+}
+
+# DEX/Market Types
+type DEX {
+  hive: MarketPair!
+  hbd: MarketPair!
+  stats: DEXStats!
+}
+
+type MarketPair {
+  tick: String!
+  sellOrders: [Order!]!
+  buyOrders: [Order!]!
+  history: [TradeHistory!]!
+}
+
+type Order {
+  id: String!
+  user: String!
+  rate: String!
+  amount: String!
+  total: String!
+  block: Int!
+  timestamp: DateTime!
+}
+
+type OrderBook {
+  tickerId: String!
+  timestamp: DateTime!
+  asks: [[String!]!]! # [price, amount]
+  bids: [[String!]!]! # [price, amount]
+}
+
+type Ticker {
+  tickerId: String!
+  baseCurrency: String!
+  targetCurrency: String!
+  lastPrice: String!
+  baseVolume: String!
+  targetVolume: String!
+  bid: String!
+  ask: String!
+  high: String!
+  low: String!
+}
+
+type Trade {
+  tradeId: String!
+  price: String!
+  baseVolume: String!
+  targetVolume: String!
+  timestamp: DateTime!
+  type: TradeType!
+}
+
+type TradeHistory {
+  id: String!
+  rate: String!
+  amount: String!
+  total: String!
+  type: TradeType!
+  user: String!
+  block: Int!
+  timestamp: DateTime!
+}
+
+type DEXStats {
+  volume24h: String!
+  trades24h: Int!
+  uniqueTraders24h: Int!
+}
+
+# NFT Types
+type NFTCollection {
+  user: String!
+  count: Int!
+  items: [NFTItem!]!
+  sets: [String!]!
+}
+
+type NFTSet {
+  name: String!
+  creator: String!
+  description: String
+  icon: String
+  banner: String
+  totalSupply: Int!
+  minted: Int!
+  royalty: Float!
+  permlink: String
+  items: [NFTItem!]!
+}
+
+type NFTItem {
+  uid: String!
+  set: String!
+  owner: String!
+  attributes: JSON
+  locked: Boolean!
+  delegated: String
+  price: String
+  auctionId: String
+}
+
+type Auction {
+  id: String!
+  set: String!
+  uid: String!
+  seller: String!
+  startPrice: String!
+  currentBid: String!
+  bidder: String
+  endBlock: Int!
+  endTime: DateTime!
+}
+
+type Sale {
+  id: String!
+  set: String!
+  uid: String!
+  seller: String!
+  price: String!
+  currency: String!
+  active: Boolean!
+}
+
+# Content Types
+type PostsInfo {
+  count: Int!
+  promoted: Int!
+  trending: Int!
+  lastUpdate: DateTime!
+}
+
+type Post {
+  author: String!
+  permlink: String!
+  title: String!
+  body: String
+  tags: [String!]!
+  created: DateTime!
+  promoted: String
+  votes: Int!
+  comments: Int!
+  payout: String!
+}
+
+# Network Types
+type MarketsInfo {
+  nodes: [NodeInfo!]!
+  consensus: ConsensusInfo!
+}
+
+type NodeInfo {
+  account: String!
+  domain: String
+  bidRate: Float!
+  attempts: Int!
+  successes: Int!
+  lastGood: Int!
+  report: NodeReport
+}
+
+type NodeReport {
+  block: Int!
+  hash: String!
+  signature: String!
+  poa: JSON
+}
+
+type Runner {
+  account: String!
+  contracts: Int!
+  type: String!
+  lastRun: Int!
+}
+
+type QueueInfo {
+  count: Int!
+  transactions: [QueuedTransaction!]!
+}
+
+type QueuedTransaction {
+  txid: String!
+  type: String!
+  from: String!
+  to: String
+  amount: String
+  memo: String
+  block: Int!
+  timestamp: DateTime!
+}
+
+type ProtocolInfo {
+  version: String!
+  features: [String!]!
+  consensusRound: Int!
+  witnesses: [String!]!
+}
+
+type TransactionStatus {
+  txid: String!
+  status: TxStatus!
+  block: Int
+  error: String
+  result: JSON
+}
+
+type PendingInfo {
+  count: Int!
+  transactions: [PendingTransaction!]!
+}
+
+type PendingTransaction {
+  txid: String!
+  type: String!
+  from: String!
+  memo: String!
+  timestamp: DateTime!
+}
+
+type ConsensusInfo {
+  round: Int!
+  hash: String!
+  agreeing: [String!]!
+  disagreeing: [String!]!
+}
+
+type Vote {
+  proposal: String!
+  weight: String!
+  timestamp: DateTime!
+}
+
+# Enums
+enum TradingPair {
+  HIVE
+  HBD
+}
+
+enum TradeType {
+  BUY
+  SELL
+}
+
+enum TxStatus {
+  PENDING
+  INCLUDED
+  EXECUTED
+  FAILED
+}
+
+# Mutations (for future implementation)
+type Mutation {
+  # Placeholder for future write operations
+  _placeholder: Boolean
+}

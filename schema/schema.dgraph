@@ -127,3 +127,23 @@ type Peer {
   peer.isActive
   peer.syncStatus
 }
+
+# Account type - represents user accounts with token balances
+type Account {
+  username
+  larynxBalance
+  spkBalance
+  broca
+  brocaAmount
+  brocaLastUpdate
+  liquidBroca
+  claimableLarynx
+  claimableBroca
+  claimableSpk
+  power
+  contract
+  owner
+  storageAccount
+  storageBroca
+  validatorBroca
+}

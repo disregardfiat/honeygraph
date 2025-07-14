@@ -1,0 +1,35 @@
+# SPK Token GraphQL Schema
+
+type SPKState {
+  supply: String!
+  transfers: Int!
+  holders: Int!
+  lastBlock: Int!
+}
+
+type SPKBalance {
+  account: String!
+  balance: String!
+  updatedAt: String!
+}
+
+type SPKTransfer {
+  from: String!
+  to: String!
+  amount: String!
+  memo: String
+  blockNum: Int!
+  timestamp: String!
+  txId: String!
+}
+
+type Query {
+  spkState: SPKState
+  spkBalance(account: String!): SPKBalance
+  spkBalances(limit: Int = 100, offset: Int = 0): [SPKBalance!]!
+  spkTransfers(
+    account: String
+    limit: Int = 100
+    offset: Int = 0
+  ): [SPKTransfer!]!
+}

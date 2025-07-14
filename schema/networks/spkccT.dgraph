@@ -1,0 +1,56 @@
+# SPK Test Network Schema Extensions
+# This schema is applied in addition to the base schema for the spkccT_ network
+
+# SPK-specific predicates
+SPKValidator.account: uid @reverse .
+SPKValidator.pubKey: string @index(hash) .
+SPKValidator.code: string @index(exact) .
+SPKValidator.domain: string @index(exact) .
+SPKValidator.votes: int .
+SPKValidator.rank: int .
+SPKValidator.active: bool @index(bool) .
+SPKValidator.lastBlock: int .
+SPKValidator.consensusRate: float .
+
+# SPK Types
+type SPKValidator {
+  SPKValidator.account
+  SPKValidator.pubKey
+  SPKValidator.code
+  SPKValidator.domain
+  SPKValidator.votes
+  SPKValidator.rank
+  SPKValidator.active
+  SPKValidator.lastBlock
+  SPKValidator.consensusRate
+}
+
+# LARYNX Mining specific
+LarynxMiner.account: uid @reverse .
+LarynxMiner.power: int .
+LarynxMiner.miningRate: float .
+LarynxMiner.lastClaim: datetime .
+LarynxMiner.totalMined: int .
+
+type LarynxMiner {
+  LarynxMiner.account
+  LarynxMiner.power
+  LarynxMiner.miningRate
+  LarynxMiner.lastClaim
+  LarynxMiner.totalMined
+}
+
+# BROCA specific
+BrocaRegeneration.account: uid @reverse .
+BrocaRegeneration.baseAmount: int .
+BrocaRegeneration.regenerationRate: float .
+BrocaRegeneration.lastUpdate: int .
+BrocaRegeneration.maxBroca: int .
+
+type BrocaRegeneration {
+  BrocaRegeneration.account
+  BrocaRegeneration.baseAmount
+  BrocaRegeneration.regenerationRate
+  BrocaRegeneration.lastUpdate
+  BrocaRegeneration.maxBroca
+}

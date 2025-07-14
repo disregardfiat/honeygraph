@@ -1,0 +1,59 @@
+# LARYNX Token Custom Schema Extensions
+
+# LARYNX-specific predicates
+LARYNXMiner.account: string @index(hash) .
+LARYNXMiner.power: string .
+LARYNXMiner.lastMineTime: datetime .
+LARYNXMiner.contracts: int .
+LARYNXMiner.earnings: string .
+LARYNXMiner.efficiency: float .
+
+LARYNXMiningPool.name: string @index(hash) .
+LARYNXMiningPool.operator: string @index(hash) .
+LARYNXMiningPool.fee: float .
+LARYNXMiningPool.minPayout: string .
+LARYNXMiningPool.members: int .
+LARYNXMiningPool.totalPower: string .
+LARYNXMiningPool.dailyRewards: string .
+
+LARYNXPowerContract.id: string @index(hash) .
+LARYNXPowerContract.miner: string @index(hash) .
+LARYNXPowerContract.power: string .
+LARYNXPowerContract.duration: int .
+LARYNXPowerContract.price: string .
+LARYNXPowerContract.buyer: string @index(hash) .
+LARYNXPowerContract.status: string @index(hash) .
+LARYNXPowerContract.created: datetime .
+LARYNXPowerContract.expires: datetime @index(hour) .
+
+# LARYNX-specific types
+type LARYNXMiner {
+  LARYNXMiner.account
+  LARYNXMiner.power
+  LARYNXMiner.lastMineTime
+  LARYNXMiner.contracts
+  LARYNXMiner.earnings
+  LARYNXMiner.efficiency
+}
+
+type LARYNXMiningPool {
+  LARYNXMiningPool.name
+  LARYNXMiningPool.operator
+  LARYNXMiningPool.fee
+  LARYNXMiningPool.minPayout
+  LARYNXMiningPool.members
+  LARYNXMiningPool.totalPower
+  LARYNXMiningPool.dailyRewards
+}
+
+type LARYNXPowerContract {
+  LARYNXPowerContract.id
+  LARYNXPowerContract.miner
+  LARYNXPowerContract.power
+  LARYNXPowerContract.duration
+  LARYNXPowerContract.price
+  LARYNXPowerContract.buyer
+  LARYNXPowerContract.status
+  LARYNXPowerContract.created
+  LARYNXPowerContract.expires
+}

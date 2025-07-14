@@ -1,0 +1,35 @@
+# LARYNX Token GraphQL Schema
+
+type LARYNXState {
+  supply: String!
+  transfers: Int!
+  holders: Int!
+  lastBlock: Int!
+}
+
+type LARYNXBalance {
+  account: String!
+  balance: String!
+  updatedAt: String!
+}
+
+type LARYNXTransfer {
+  from: String!
+  to: String!
+  amount: String!
+  memo: String
+  blockNum: Int!
+  timestamp: String!
+  txId: String!
+}
+
+type Query {
+  larynxState: LARYNXState
+  larynxBalance(account: String!): LARYNXBalance
+  larynxBalances(limit: Int = 100, offset: Int = 0): [LARYNXBalance!]!
+  larynxTransfers(
+    account: String
+    limit: Int = 100
+    offset: Int = 0
+  ): [LARYNXTransfer!]!
+}

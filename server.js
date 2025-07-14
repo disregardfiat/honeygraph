@@ -4,6 +4,8 @@ import cors from 'cors';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import { config } from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { createLogger } from './lib/logger.js';
 import { DgraphClient } from './lib/dgraph-client.js';
 import { createRouter } from './routes/index.js';
@@ -14,15 +16,41 @@ import { createPeerSyncManager } from './lib/peer-sync.js';
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import { WSForkHandler } from './lib/ws-fork-handler.js';
+import { NetworkManager, DEFAULT_NETWORKS } from './lib/network-manager.js';
 
 config();
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const logger = createLogger('server');
 const app = express();
 const PORT = process.env.API_PORT || 3030;
 const PEER_ID = process.env.PEER_ID || `node_${Date.now()}`;
 
-// Initialize Dgraph client
+// Initialize Network Manager
+const networkManager = new NetworkManager({
+  dgraphUrl: process.env.DGRAPH_URL || 'http://localhost:9080',
+  schemaPath: path.join(__dirname, 'schema'),
+  baseDataPath: process.env.DATA_PATH || './data/honeygraph'
+});
+
+// Initialize the manager
+await networkManager.initialize();
+
+// Register default networks
+for (const [prefix, config] of Object.entries(DEFAULT_NETWORKS)) {
+  try {
+    await networkManager.registerNetwork(prefix, config);
+    logger.info(`Registered network: ${prefix} - ${config.name}`);
+  } catch (error) {
+    if (error.message.includes('already registered')) {
+      logger.debug(`Network ${prefix} already registered`);
+    } else {
+      logger.error(`Failed to register network ${prefix}:`, error);
+    }
+  }
+}
+
+// Default DgraphClient for backward compatibility
 const dgraphClient = new DgraphClient({
   url: process.env.DGRAPH_URL || 'http://localhost:9080',
   logger
@@ -74,7 +102,8 @@ const replicationQueue = new ReplicationQueue({
   dgraphClient,
   forkManager,
   zfsCheckpoints,
-  logger
+  logger,
+  networkManager
 });
 
 // Middleware
@@ -112,7 +141,7 @@ import { createFileSystemRoutes } from './routes/filesystem.js';
 app.use('/', createFileSystemRoutes({ dgraphClient }));
 
 // API routes
-app.use('/api', createRouter({ dgraphClient, forkManager, replicationQueue, zfsCheckpoints, peerSync }));
+app.use('/api', createRouter({ dgraphClient, forkManager, replicationQueue, zfsCheckpoints, peerSync, networkManager }));
 
 // Peer discovery endpoint (for other honeygraph nodes)
 app.get('/api/honeygraph-peers', (req, res) => {
@@ -196,6 +225,38 @@ const forkHandler = new WSForkHandler({
 
 // Start periodic cleanup
 forkHandler.startCleanup();
+
+// Handle network/token identification
+forkHandler.on('network:identified', async (data) => {
+  try {
+    const { prefix, tokens, nodeId } = data;
+    logger.info(`Network identified: ${prefix} with tokens ${tokens.join(', ')} from node ${nodeId}`);
+    
+    // Check if network already registered
+    if (!networkManager.getNetwork(prefix)) {
+      // Auto-register network with identified tokens
+      const networkConfig = {
+        name: `${prefix.slice(0, -1).toUpperCase()} Network`,
+        description: `Auto-discovered network: ${prefix}`,
+        tokens: tokens.map(symbol => ({
+          symbol: symbol,
+          name: `${symbol} Token`,
+          description: `${symbol} token on ${prefix} network`,
+          precision: 3,
+          features: {
+            transfers: true
+          }
+        })),
+        autoCreated: true
+      };
+      
+      await networkManager.registerNetwork(prefix, networkConfig);
+      logger.info(`Auto-registered new network: ${prefix}`);
+    }
+  } catch (error) {
+    logger.error('Failed to handle network identification', { error: error.message });
+  }
+});
 
 // Handle WebSocket connections
 wss.on('connection', (ws, req) => {

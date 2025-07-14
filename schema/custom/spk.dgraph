@@ -1,0 +1,79 @@
+# SPK Token Custom Schema Extensions
+
+# SPK-specific predicates
+SPKValidator.account: string @index(hash) .
+SPKValidator.pubKey: string @index(hash) .
+SPKValidator.signingKey: string .
+SPKValidator.encryptionKey: string .
+SPKValidator.stake: string .
+SPKValidator.rewards: string .
+SPKValidator.lastBlock: int .
+SPKValidator.missedBlocks: int .
+SPKValidator.totalBlocks: int .
+
+SPKStorageContract.id: string @index(hash) .
+SPKStorageContract.creator: string @index(hash) .
+SPKStorageContract.fileSet: string @index(hash) .
+SPKStorageContract.totalSize: int .
+SPKStorageContract.duration: int .
+SPKStorageContract.powerRequired: string .
+SPKStorageContract.brocaPaid: string .
+SPKStorageContract.status: string @index(hash) .
+SPKStorageContract.providers: [uid] .
+SPKStorageContract.expiry: datetime @index(hour) .
+
+SPKBrocaBalance.account: string @index(hash) .
+SPKBrocaBalance.balance: string .
+SPKBrocaBalance.powerUp: string .
+SPKBrocaBalance.powerDown: string .
+SPKBrocaBalance.lastUpdate: datetime .
+
+SPKEncryptedFile.cid: string @index(hash) .
+SPKEncryptedFile.owner: string @index(hash) .
+SPKEncryptedFile.size: int .
+SPKEncryptedFile.encryptionType: string .
+SPKEncryptedFile.sharedWith: [string] .
+SPKEncryptedFile.created: datetime .
+
+# SPK-specific types
+type SPKValidator {
+  SPKValidator.account
+  SPKValidator.pubKey
+  SPKValidator.signingKey
+  SPKValidator.encryptionKey
+  SPKValidator.stake
+  SPKValidator.rewards
+  SPKValidator.lastBlock
+  SPKValidator.missedBlocks
+  SPKValidator.totalBlocks
+}
+
+type SPKStorageContract {
+  SPKStorageContract.id
+  SPKStorageContract.creator
+  SPKStorageContract.fileSet
+  SPKStorageContract.totalSize
+  SPKStorageContract.duration
+  SPKStorageContract.powerRequired
+  SPKStorageContract.brocaPaid
+  SPKStorageContract.status
+  SPKStorageContract.providers
+  SPKStorageContract.expiry
+}
+
+type SPKBrocaBalance {
+  SPKBrocaBalance.account
+  SPKBrocaBalance.balance
+  SPKBrocaBalance.powerUp
+  SPKBrocaBalance.powerDown
+  SPKBrocaBalance.lastUpdate
+}
+
+type SPKEncryptedFile {
+  SPKEncryptedFile.cid
+  SPKEncryptedFile.owner
+  SPKEncryptedFile.size
+  SPKEncryptedFile.encryptionType
+  SPKEncryptedFile.sharedWith
+  SPKEncryptedFile.created
+}

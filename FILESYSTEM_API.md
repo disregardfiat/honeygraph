@@ -44,7 +44,8 @@ GET /fs/alice/Documents/Projects
     {
       "name": "vacation",
       "type": "directory",
-      "path": "/Videos/vacation"
+      "path": "/Videos/vacation",
+      "numberOfItems": 1
     },
     {
       "name": "tutorial.mp4",

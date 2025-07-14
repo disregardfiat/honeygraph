@@ -1,0 +1,35 @@
+# BROCA Token GraphQL Schema
+
+type BROCAState {
+  supply: String!
+  transfers: Int!
+  holders: Int!
+  lastBlock: Int!
+}
+
+type BROCABalance {
+  account: String!
+  balance: String!
+  updatedAt: String!
+}
+
+type BROCATransfer {
+  from: String!
+  to: String!
+  amount: String!
+  memo: String
+  blockNum: Int!
+  timestamp: String!
+  txId: String!
+}
+
+type Query {
+  brocaState: BROCAState
+  brocaBalance(account: String!): BROCABalance
+  brocaBalances(limit: Int = 100, offset: Int = 0): [BROCABalance!]!
+  brocaTransfers(
+    account: String
+    limit: Int = 100
+    offset: Int = 0
+  ): [BROCATransfer!]!
+}
