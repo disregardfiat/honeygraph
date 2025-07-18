@@ -71,6 +71,29 @@ services:
     restart: unless-stopped
     networks:
       - honeygraph
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3030/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    command: >
+      sh -c "
+        echo 'Waiting for Dgraph to be ready...' &&
+        for i in 1 2 3 4 5 6 7 8 9 10; do
+          if curl -f http://dgraph-alpha:8080/health 2>/dev/null; then
+            echo 'Dgraph is ready!' &&
+            break
+          else
+            echo 'Dgraph not ready, waiting 5 seconds...' &&
+            sleep 5
+          fi
+        done &&
+        echo 'Initializing schema...' &&
+        node /app/scripts/init-schema.js || echo 'Schema init failed, continuing anyway...' &&
+        echo 'Starting API server...' &&
+        npm start
+      "
 
 networks:
   honeygraph:

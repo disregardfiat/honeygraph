@@ -138,7 +138,7 @@ app.use('/api/replicate', strictLimiter);
 import { createFileSystemRoutes } from './routes/filesystem.js';
 
 // Mount filesystem routes at root for clean URLs
-app.use('/', createFileSystemRoutes({ dgraphClient }));
+app.use('/', createFileSystemRoutes({ dgraphClient, networkManager }));
 
 // API routes
 app.use('/api', createRouter({ dgraphClient, forkManager, replicationQueue, zfsCheckpoints, peerSync, networkManager }));
@@ -219,7 +219,7 @@ const wss = new WebSocketServer({
 // Create fork handler for WebSocket
 const forkHandler = new WSForkHandler({
   maxForksPerBlock: 10,
-  forkRetentionTime: 3600000, // 1 hour
+  forkRetentionTime: 3600000 * 72, // 1 hour
   operationBufferSize: 10000
 });
 

@@ -1,7 +1,7 @@
 FROM node:18-slim
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
+# Install build dependencies and curl for health checks
+RUN apt-get update && apt-get install -y python3 make g++ curl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -11,7 +11,7 @@ COPY package*.json ./
 # Install dependencies
 RUN npm config set strict-ssl false && npm install --omit=dev
 
-# Copy application code
+# Copy application code (updated 2025-07-17T13:23 - added folder counts)
 COPY . .
 
 # Create necessary directories

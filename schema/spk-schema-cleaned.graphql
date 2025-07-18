@@ -33,6 +33,7 @@ type Account {
   
   # Storage relationships
   contracts: [StorageContract] @hasInverse(field: purchaser) # contract[account]
+  ownedContracts: [StorageContract] @hasInverse(field: owner) # contracts where account owns files
   dexContracts: [DexContract] @hasInverse(field: owner) # contracts[account]
   proffersSent: [Proffer] @hasInverse(field: from) # proffer[to][from]
   proffersReceived: [Proffer] @hasInverse(field: to) # proffer[to][from]
@@ -72,6 +73,7 @@ type StorageContract {
   
   # Contract identification
   purchaser: Account! # f - purchasing account
+  owner: Account! # t - file owner (often same as purchaser, but can be different)
   contractType: Int! @search(by: [int]) # From ID parsing (0 = storage, etc)
   blockNumber: Int! @search(by: [int]) # From ID parsing
   txid: String! @search(by: [hash]) # From ID parsing

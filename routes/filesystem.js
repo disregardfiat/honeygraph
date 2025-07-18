@@ -3,7 +3,7 @@ import { createLogger } from '../lib/logger.js';
 
 const logger = createLogger('filesystem-api');
 
-export function createFileSystemRoutes({ dgraphClient }) {
+export function createFileSystemRoutes({ dgraphClient, networkManager }) {
   const router = Router();
 
   /**
@@ -49,10 +49,10 @@ export function createFileSystemRoutes({ dgraphClient }) {
    * GET /fs/:username/*path
    */
   router.get('/fs/:username/*', async (req, res) => {
+    const { username } = req.params;
+    const requestPath = req.params[0] || '/';
+    
     try {
-      const { username } = req.params;
-      const requestPath = req.params[0] || '/';
-      
       logger.info('Filesystem request', { username, path: requestPath });
 
       // Normalize path (ensure it starts with /)
@@ -71,7 +71,12 @@ export function createFileSystemRoutes({ dgraphClient }) {
         await handleDirectoryRequest(dgraphClient, username, normalizedPath, res);
       }
     } catch (error) {
-      logger.error('Filesystem request failed', { error: error.message });
+      logger.error('Filesystem request failed', { 
+        error: error.message,
+        stack: error.stack,
+        username: username,
+        path: requestPath
+      });
       res.status(500).json({ error: 'Internal server error' });
     }
   });
@@ -171,6 +176,10 @@ export function createFileSystemRoutes({ dgraphClient }) {
    * Handle file requests - redirect to IPFS with version control
    */
   async function handleFileRequest(dgraphClient, username, filePath, res) {
+    // Get the correct network client (SPK network data is in spkccT_ namespace)
+    const spkNetwork = networkManager.getNetwork('spkccT_');
+    const networkClient = spkNetwork ? spkNetwork.dgraphClient : dgraphClient;
+    
     // Query for files matching this path, ordered by block number (newest first)
     const query = `
       query getFile($username: string, $filePath: string) {
@@ -179,7 +188,8 @@ export function createFileSystemRoutes({ dgraphClient }) {
           name
           size
           mimeType
-          contract @filter(eq(purchaser.username, $username) AND eq(status, 3)) {
+          flags
+          contract @filter(eq(owner.username, $username) AND eq(status, 3)) {
             id
             blockNumber
             purchaser {
@@ -196,9 +206,12 @@ export function createFileSystemRoutes({ dgraphClient }) {
       $filePath: filePath
     };
 
-    const result = await dgraphClient.query(query, vars);
-    const files = result.files || [];
+    const result = await networkClient.query(query, vars);
+    let files = result.files || [];
 
+    // Filter out files with bitflag 2 (thumbnails/hidden files)
+    files = files.filter(file => !((file.flags || 0) & 2));
+    
     if (files.length === 0) {
       // Try to find by name in the parent directory
       const pathParts = filePath.split('/');
@@ -213,8 +226,9 @@ export function createFileSystemRoutes({ dgraphClient }) {
             size
             mimeType
             path
+            flags
             contract @filter(
-              eq(purchaser.username, $username) 
+              eq(owner.username, $username) 
               AND eq(status, 3)
               AND eq(path, $parentPath)
             ) {
@@ -229,13 +243,18 @@ export function createFileSystemRoutes({ dgraphClient }) {
         }
       `;
 
-      const nameResult = await dgraphClient.queryWithVars(nameQuery, {
+      const nameTxn = networkClient.client.newTxn();
+      const nameResponse = await nameTxn.queryWithVars(nameQuery, {
         $username: username,
         $parentPath: parentPath,
         $fileName: fileName
       });
+      const nameResult = nameResponse.getJson();
 
-      const namedFiles = nameResult.files || [];
+      let namedFiles = nameResult.files || [];
+      
+      // Filter out files with bitflag 2 (thumbnails/hidden files)
+      namedFiles = namedFiles.filter(file => !((file.flags || 0) & 2));
       
       if (namedFiles.length === 0) {
         return res.status(404).json({ 
@@ -256,7 +275,7 @@ export function createFileSystemRoutes({ dgraphClient }) {
     
     // Try to get gateways from the storage nodes that have this file
     let gatewayUrl = null;
-    const storageGateways = await getStorageNodeGateways(dgraphClient, newestFile.contract.id);
+    const storageGateways = await getStorageNodeGateways(networkClient, newestFile.contract.id);
     
     if (storageGateways.length > 0) {
       // Use the first available gateway from nodes storing this file
@@ -268,7 +287,7 @@ export function createFileSystemRoutes({ dgraphClient }) {
       });
     } else {
       // Fallback: Try to find any available IPFS gateway in the network
-      const allGateways = await getAllIPFSGateways(dgraphClient);
+      const allGateways = await getAllIPFSGateways(networkClient);
       
       if (allGateways.length > 0) {
         gatewayUrl = `${allGateways[0].url}/ipfs/${newestFile.cid}`;
@@ -305,71 +324,317 @@ export function createFileSystemRoutes({ dgraphClient }) {
    * Handle directory requests - return listing of files and subdirectories
    */
   async function handleDirectoryRequest(dgraphClient, username, directoryPath, res) {
-    // First, get all contracts for the user
-    const contractsQuery = `
-      query getUserContracts($username: string) {
-        user(func: eq(Account.username, $username)) {
+    logger.info('handleDirectoryRequest called', { username, directoryPath });
+    
+    // Get the correct network client (SPK network data is in spkccT_ namespace)
+    const spkNetwork = networkManager.getNetwork('spkccT_');
+    const networkClient = spkNetwork ? spkNetwork.dgraphClient : dgraphClient;
+    
+    logger.info('Using spkccT_ network client', { 
+      clientNamespace: networkClient.namespace,
+      hasClient: !!networkClient
+    });
+    
+    // First get the user UID to ensure we can query with it
+    const userQuery = `
+      query getUser($username: string) {
+        user(func: eq(username, $username), first: 1) {
+          uid
           username
-          contracts @filter(eq(status, 3)) {
-            id
-            blockNumber
-            metadata {
-              folderStructure
-              encrypted
-              autoRenew
-            }
-            files {
+        }
+      }
+    `;
+    
+    const userResult = await networkClient.query(userQuery, { $username: username });
+    const user = userResult.user?.[0];
+    
+    if (!user) {
+      logger.info('User not found', { username });
+      return res.json({
+        path: directoryPath,
+        username: username,
+        type: 'directory',
+        contents: []
+      });
+    }
+    
+    // Query the path tree for this user and directory using UID
+    const pathQuery = `
+      query getPath($userUid: string, $fullPath: string) {
+        path(func: eq(fullPath, $fullPath)) @filter(uid_in(owner, $userUid)) {
+          fullPath
+          pathName
+          pathType
+          itemCount
+          children {
+            fullPath
+            pathName
+            pathType
+            itemCount
+            currentFile {
               cid
               name
+              extension
               size
               mimeType
-              path
+              license
+              labels
+              thumbnail
+              contract {
+                id
+                blockNumber
+                encryptionData
+                storageNodes {
+                  storageAccount {
+                    username
+                  }
+                }
+              }
             }
           }
         }
       }
     `;
 
-    const result = await dgraphClient.queryWithVars(contractsQuery, { 
-      $username: username 
+    logger.info('Querying path tree', { 
+      username, 
+      directoryPath,
+      userUid: user.uid
     });
-
-    if (!result.user || result.user.length === 0) {
-      return res.status(404).json({ 
-        error: 'User not found',
-        username 
+    
+    let result;
+    try {
+      const vars = { 
+        $userUid: user.uid,
+        $fullPath: directoryPath
+      };
+      logger.info('Query variables', vars);
+      result = await networkClient.query(pathQuery, vars);
+      
+      logger.info('Path query result', { 
+        pathCount: result.path?.length || 0,
+        queryVars: vars,
+        result: JSON.stringify(result).substring(0, 200)
       });
+    } catch (error) {
+      logger.error('Path query failed', { error: error.message, stack: error.stack });
+      throw error;
     }
 
-    const user = result.user[0];
-    const contracts = user.contracts || [];
-
-    // Build file system structure
-    const fileSystem = buildFileSystemStructure(contracts, directoryPath);
+    // If no path found, return empty directory
+    if (!result.path || result.path.length === 0) {
+      logger.info('No path found, returning empty directory');
+      return res.json({
+        path: directoryPath,
+        username: username,
+        type: 'directory',
+        contents: []
+      });
+    }
+    
+    const pathData = result.path[0];
+    const contents = [];
+    
+    // Add preset folders if at root
+    if (directoryPath === '/' || directoryPath === '') {
+      const presetFolders = {
+        'Documents': '/Documents',
+        'Images': '/Images',
+        'Videos': '/Videos',
+        'Music': '/Music',
+        'Archives': '/Archives',
+        'Code': '/Code',
+        'Trash': '/Trash',
+        'Misc': '/Misc'
+      };
+      
+      for (const [name, path] of Object.entries(presetFolders)) {
+        // Check if this preset exists in children
+        const child = pathData.children?.find(c => c.pathName === name);
+        if (child) {
+          contents.push({
+            name: child.pathName,
+            type: 'directory',
+            path: child.fullPath,
+            itemCount: child.itemCount || 0
+          });
+        } else {
+          // Add empty preset
+          contents.push({
+            name: name,
+            type: 'directory',
+            path: path,
+            itemCount: 0
+          });
+        }
+      }
+    }
+    
+    // Process children from path tree
+    if (pathData.children) {
+      for (const child of pathData.children) {
+        // Skip if already added as preset
+        if (directoryPath === '/' && ['Documents', 'Images', 'Videos', 'Music', 'Archives', 'Code', 'Trash', 'Misc'].includes(child.pathName)) {
+          continue;
+        }
+        
+        if (child.pathType === 'directory') {
+          contents.push({
+            name: child.pathName,
+            type: 'directory',
+            path: child.fullPath,
+            itemCount: child.itemCount || 0
+          });
+        } else if (child.pathType === 'file' && child.currentFile) {
+          const file = child.currentFile;
+          const contract = file.contract;
+          
+          // Skip files with bitflag 2 (thumbnails/hidden)
+          if ((file.flags || 0) & 2) {
+            continue;
+          }
+          
+          contents.push({
+            name: file.name,
+            type: 'file',
+            cid: file.cid,
+            extension: file.extension || '',
+            size: file.size,
+            mimeType: file.mimeType,
+            license: file.license || '',
+            labels: file.labels || '',
+            thumbnail: file.thumbnail || '',
+            contract: {
+              id: contract.id,
+              blockNumber: contract.blockNumber,
+              encryptionData: contract.encryptionData || null,
+              storageNodeCount: contract.storageNodes ? contract.storageNodes.length : 0,
+              storageNodes: contract.storageNodes ? contract.storageNodes.map(n => n.storageAccount?.username).filter(Boolean) : []
+            },
+            metadata: {
+              encrypted: contract.encryptionData ? true : false,
+              autoRenew: true // TODO: get from contract metadata
+            }
+          });
+        }
+      }
+    }
+    
+    // Sort contents: directories first, then files, alphabetically
+    contents.sort((a, b) => {
+      if (a.type !== b.type) {
+        return a.type === 'directory' ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name);
+    });
 
     // Format response
-    const response = {
+    const directoryResponse = {
       path: directoryPath,
       username: username,
       type: 'directory',
-      contents: fileSystem
+      contents: contents
     };
 
-    res.json(response);
+    res.json(directoryResponse);
   }
 
   /**
-   * Build file system structure from contracts
+   * Build file system structure from contracts (DEPRECATED - using Path queries now)
    */
-  function buildFileSystemStructure(contracts, requestedPath) {
+  function buildFileSystemStructure_DEPRECATED(contracts, requestedPath) {
     const normalizedPath = requestedPath.endsWith('/') && requestedPath !== '/' 
       ? requestedPath.slice(0, -1) 
       : requestedPath;
 
     const items = new Map(); // Use map to handle duplicates
     const seenPaths = new Set();
+    
+    // Add preset folders if we're at root
+    logger.info('Building filesystem structure', { normalizedPath, requestedPath });
+    if (normalizedPath === '' || normalizedPath === '/') {
+      const presetFolders = {
+        '2': 'Documents',
+        '3': 'Images', 
+        '4': 'Videos',
+        '5': 'Music',
+        '6': 'Archives',
+        '7': 'Code',
+        '8': 'Trash',
+        '9': 'Misc'
+      };
+      
+      for (const [index, folderName] of Object.entries(presetFolders)) {
+        items.set(folderName, {
+          name: folderName,
+          type: 'directory',
+          path: `/${folderName}`,
+          itemCount: 0
+        });
+      }
+    }
+    
+    // Track file counts per directory
+    const directoryCounts = new Map();
+    
+    // First pass: Add all folders from metadata
+    for (const contract of contracts) {
+      const folderStructure = contract.metadata?.folderStructure 
+        ? JSON.parse(contract.metadata.folderStructure) 
+        : null;
 
-    // Process all contracts
+      if (folderStructure) {
+        logger.debug('Processing folder structure', { 
+          contractId: contract.id,
+          folderStructure,
+          normalizedPath 
+        });
+        
+        for (const [index, folderPath] of Object.entries(folderStructure)) {
+          if (folderPath !== '/' && folderPath !== '') {
+            // Handle subfolders like "1/Resources"
+            if (folderPath.includes('/')) {
+              const parts = folderPath.split('/');
+              const parentIndex = parts[0];
+              const folderName = parts[1];
+              
+              // Check if we should show this subfolder
+              const parentFolder = Object.entries(folderStructure).find(([idx, path]) => idx === parentIndex);
+              if (parentFolder) {
+                const parentPath = parentFolder[1] === '/' ? '' : parentFolder[1];
+                const parentFullPath = parentPath.startsWith('/') ? parentPath : `/${parentPath}`;
+                
+                // Show subfolder if we're in the parent directory
+                if (normalizedPath === parentFullPath) {
+                  items.set(folderName, {
+                    name: folderName,
+                    type: 'directory',
+                    path: `${normalizedPath}/${folderName}`.replace('//', '/'),
+                    itemCount: 0
+                  });
+                }
+              }
+            } else {
+              // Top-level folder
+              const folderName = folderPath.startsWith('/') ? folderPath.substring(1) : folderPath;
+              
+              // Only add top-level folders when at root
+              if ((normalizedPath === '' || normalizedPath === '/') && folderName && !items.has(folderName)) {
+                logger.info('Adding custom folder', { folderName, path: `/${folderName}` });
+                items.set(folderName, {
+                  name: folderName,
+                  type: 'directory',
+                  path: `/${folderName}`,
+                  itemCount: 0
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Second pass: Process files and subdirectories
     for (const contract of contracts) {
       const files = contract.files || [];
       const folderStructure = contract.metadata?.folderStructure 
@@ -378,6 +643,12 @@ export function createFileSystemRoutes({ dgraphClient }) {
 
       // Process files
       for (const file of files) {
+        // Skip files with bitflag 2 (thumbnails/hidden files)
+        const fileFlags = file.flags || 0;
+        if (fileFlags & 2) {
+          continue;
+        }
+        
         const filePath = file.path || '/';
         const fileName = file.name || file.cid;
 
@@ -391,11 +662,18 @@ export function createFileSystemRoutes({ dgraphClient }) {
               name: fileName,
               type: 'file',
               cid: file.cid,
+              extension: file.extension || '',
               size: file.size,
               mimeType: file.mimeType,
+              license: file.license || '',
+              labels: file.labels || '',
+              thumbnail: file.thumbnail || '',
               contract: {
                 id: contract.id,
-                blockNumber: contract.blockNumber
+                blockNumber: contract.blockNumber,
+                encryptionData: contract.encryptionData || null,
+                storageNodeCount: contract.storageNodes ? contract.storageNodes.length : 0,
+                storageNodes: contract.storageNodes ? contract.storageNodes.map(n => n.storageAccount?.username).filter(Boolean) : []
               },
               metadata: {
                 encrypted: contract.metadata?.encrypted || false,
@@ -426,7 +704,8 @@ export function createFileSystemRoutes({ dgraphClient }) {
                   items.set(subdirName, {
                     name: subdirName,
                     type: 'directory',
-                    path: `${normalizedPath}/${subdirName}`.replace('//', '/')
+                    path: `${normalizedPath}/${subdirName}`.replace('//', '/'),
+                    itemCount: 0
                   });
                 }
               }
@@ -438,33 +717,84 @@ export function createFileSystemRoutes({ dgraphClient }) {
               items.set(subdirName, {
                 name: subdirName,
                 type: 'directory',
-                path: `${normalizedPath}/${subdirName}`.replace('//', '/')
+                path: `${normalizedPath}/${subdirName}`.replace('//', '/'),
+                itemCount: 0
               });
             }
           }
         }
       }
 
-      // Add folders from metadata if available
-      if (folderStructure) {
-        for (const [index, folderPath] of Object.entries(folderStructure)) {
-          if (folderPath !== '/' && folderPath.startsWith(normalizedPath)) {
-            const relativePath = folderPath.substring(normalizedPath.length);
-            if (relativePath && !relativePath.includes('/')) {
-              const folderName = relativePath.startsWith('/') 
-                ? relativePath.substring(1) 
-                : relativePath;
-                
-              if (folderName && !items.has(folderName)) {
-                items.set(folderName, {
-                  name: folderName,
-                  type: 'directory',
-                  path: `${normalizedPath}/${folderName}`.replace('//', '/')
-                });
-              }
+      // Folders already processed in first pass
+    }
+    
+    // Count files in subdirectories
+    // We need to count files for any directory listing, not just root
+    // Count files in subdirectories
+    
+    for (const contract of contracts) {
+      const files = contract.files || [];
+      // Process each file in the contract
+      
+      for (const file of files) {
+        const fileFlags = file.flags || 0;
+        if (fileFlags & 2) {
+          // Skip thumbnails
+          continue; // Skip thumbnails
+        }
+        
+        const filePath = file.path || '/';
+        // Check if file is in a subdirectory of our current path
+        
+        // For counting, we need to check if this file belongs to any subdirectory
+        // that we're showing in the current listing
+        if (filePath.startsWith(normalizedPath) && filePath !== normalizedPath) {
+          const relativePath = filePath.substring(normalizedPath.length);
+          const relativePathClean = relativePath.startsWith('/') ? relativePath.substring(1) : relativePath;
+          const pathParts = relativePathClean.split('/').filter(p => p);
+          
+          // File is in a subdirectory - count it for the immediate subdirectory
+          
+          // We need to count this file for its immediate parent directory
+          // if that directory is shown in the current listing
+          if (pathParts.length >= 1) {
+            // Get the immediate subdirectory name relative to current path
+            const immediateSubDir = pathParts[0];
+            
+            // Check if this subdirectory is shown in the current listing
+            
+            // Only count if this subdirectory is in our items listing
+            if (items.has(immediateSubDir)) {
+              const count = directoryCounts.get(immediateSubDir) || 0;
+              directoryCounts.set(immediateSubDir, count + 1);
+              // Increment count for this directory
+            } else {
+              // Subdirectory not shown in current listing
             }
           }
         }
+      }
+    }
+    
+    // File counting complete
+    
+    // Update item counts for ALL directories
+    // Update item counts for all directories
+    
+    for (const [dirName, count] of directoryCounts) {
+      if (items.has(dirName)) {
+        const item = items.get(dirName);
+        // Update the item count
+        item.itemCount = count;
+      } else {
+        // Directory was removed or not found
+      }
+    }
+    
+    // Ensure all directories have itemCount set (even if 0)
+    for (const item of items.values()) {
+      if (item.type === 'directory' && !('itemCount' in item)) {
+        item.itemCount = 0;
       }
     }
 
@@ -505,6 +835,7 @@ export function createFileSystemRoutes({ dgraphClient }) {
                 size
                 mimeType
                 path
+                flags
               }
               metadata {
                 folderStructure
@@ -569,7 +900,7 @@ export function createFileSystemRoutes({ dgraphClient }) {
     // Query for my encrypted contracts that have encryption keys
     const query = `
       query getSharedByMe($username: string) {
-        user(func: eq(Account.username, $username)) {
+        user(func: eq(username, $username)) {
           contracts @filter(eq(status, 3)) @cascade {
             id
             blockNumber
@@ -718,6 +1049,12 @@ export function createFileSystemRoutes({ dgraphClient }) {
       const files = contract.files || [];
       
       for (const file of files) {
+        // Skip files with bitflag 2 (thumbnails/hidden files)
+        const fileFlags = file.flags || 0;
+        if (fileFlags & 2) {
+          continue;
+        }
+        
         const filePath = file.path || '/';
         const fileName = file.name || file.cid;
         
@@ -765,6 +1102,12 @@ export function createFileSystemRoutes({ dgraphClient }) {
       const files = contract.files || [];
       
       for (const file of files) {
+        // Skip files with bitflag 2 (thumbnails/hidden files)
+        const fileFlags = file.flags || 0;
+        if (fileFlags & 2) {
+          continue;
+        }
+        
         const filePath = file.path || '/';
         const fileName = file.name || file.cid;
         

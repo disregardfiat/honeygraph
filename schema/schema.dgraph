@@ -128,6 +128,56 @@ type Peer {
   peer.syncStatus
 }
 
+# Account predicates
+username: string @index(hash, term) .
+larynxBalance: int .
+spkBalance: int .
+broca: int .
+brocaAmount: int .
+brocaLastUpdate: datetime .
+liquidBroca: int .
+claimableLarynx: int .
+claimableBroca: int .
+claimableSpk: int .
+power: int @index(int) .
+powerGranted: int .
+contract: uid @reverse .
+contracts: [uid] @reverse .
+owner: uid @reverse .
+storageAccount: uid @reverse .
+storageBroca: int .
+validatorBroca: int .
+
+# Contract predicates
+id: string @index(hash, term) .
+purchaser: uid @reverse .
+contractType: int @index(int) .
+blockNumber: int @index(int) .
+txid: string @index(hash) .
+authorized: int @index(int) .
+broker: string @index(term) .
+status: int @index(int) .
+refunded: int @index(int) .
+utilized: int @index(int) .
+verified: int @index(int) .
+expiresBlock: int @index(int) .
+fileCount: int @index(int) .
+encryptionData: string .
+metadata: string .
+storageNodes: [uid] @reverse .
+
+# ContractFile predicates
+cid: string @index(hash) .
+name: string @index(term, fulltext) .
+extension: string @index(term) .
+size: int @index(int) .
+path: string @index(term) .
+mimeType: string @index(term) .
+flags: int .
+license: string @index(term) .
+labels: string @index(term) .
+thumbnail: string @index(term) .
+
 # Account type - represents user accounts with token balances
 type Account {
   username
@@ -141,9 +191,98 @@ type Account {
   claimableBroca
   claimableSpk
   power
+  powerGranted
   contract
+  contracts
   owner
   storageAccount
   storageBroca
   validatorBroca
+}
+
+# Storage Contract type
+type StorageContract {
+  id
+  purchaser
+  owner
+  contractType
+  blockNumber
+  txid
+  authorized
+  broker
+  status
+  power
+  refunded
+  utilized
+  verified
+  expiresBlock
+  fileCount
+  encryptionData
+  metadata
+  storageNodes
+}
+
+# Contract File type
+type ContractFile {
+  cid
+  name
+  extension
+  size
+  path
+  mimeType
+  flags
+  license
+  labels
+  thumbnail
+  contract
+}
+
+# Storage Node Validation predicates
+validated: bool @index(bool) .
+
+# Storage Node Validation type
+type StorageNodeValidation {
+  storageAccount
+  contract
+  validated
+}
+
+# Encryption Key predicates
+encryptedKey: string @index(hash) .
+keyType: string @index(term) .
+sharedWith: uid @reverse .
+sharedBy: uid @reverse .
+keyContract: uid @reverse .
+
+# Encryption Key type - represents encrypted keys shared between users
+type EncryptionKey {
+  encryptedKey
+  keyType
+  sharedWith
+  sharedBy
+  keyContract
+}
+
+# Path predicates
+fullPath: string @index(exact, term) .
+pathName: string @index(term) .
+pathType: string @index(term) .
+parent: uid @reverse .
+children: [uid] @reverse .
+# owner: uid @reverse . # Already defined above in Account predicates
+itemCount: int @index(int) .
+currentFile: uid .
+newestBlockNumber: int @index(int) .
+
+# Path type - represents directory structure for each user
+type Path {
+  fullPath
+  pathName
+  pathType
+  parent
+  children
+  owner
+  itemCount
+  currentFile
+  newestBlockNumber
 }
