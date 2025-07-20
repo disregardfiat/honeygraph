@@ -158,9 +158,15 @@ async function main() {
           operations = flattenStateToOperations(stateData.state[pathKey], [pathKey], stateData.state.stats?.block_num || 0);
         }
         
-        for (const operation of operations) {
+        // Process operations in batch to enable file deduplication
+        if (operations.length > 0) {
           try {
-            const mutations = await transformer.transformOperation(operation);
+            const blockInfo = {
+              blockNum: stateData.state.stats?.block_num || 0,
+              timestamp: Date.now()
+            };
+            
+            const mutations = await transformer.transformOperations(operations, blockInfo);
             
             if (mutations.length > 0) {
               // Import mutations
@@ -175,15 +181,14 @@ async function main() {
                 await txn.discard();
               }
             }
-            totalOperations++;
+            totalOperations += operations.length;
             
             // Update progress
-            if (totalOperations % 100 === 0) {
-              spinner.text = `Importing data... (${totalOperations} operations, ${totalMutations} mutations)`;
-            }
+            spinner.text = `Importing data... (${totalOperations} operations, ${totalMutations} mutations)`;
           } catch (error) {
-            logger.error('Failed to process operation', { 
-              path: operation.path, 
+            logger.error('Failed to process operation batch', { 
+              pathKey: pathKey, 
+              operationCount: operations.length,
               error: error.message 
             });
           }

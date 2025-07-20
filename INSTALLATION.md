@@ -36,21 +36,22 @@ docker-compose logs -f honeygraph-api
 ```
 
 Services will be available at:
-- **API**: http://localhost:3030
-- **Dgraph Alpha**: http://localhost:9080
-- **Dgraph Ratel UI**: http://localhost:8100
-- **Redis**: localhost:16379
+- **API**: http://localhost:3030 (only external port exposed)
+- **Internal services** communicate through Docker network:
+  - Dgraph Alpha: internal Docker network only
+  - Dgraph Ratel UI: internal Docker network only  
+  - Redis: internal Docker network only
 
 ### 3. Import Initial State Data
 
 The SPK Network state must be imported to populate the database with real data:
 
 ```bash
-# Import current state from SPK Network
-node scripts/import-state.js
+# Import current state from SPK Network (run inside Docker container)
+docker exec honeygraph-api node scripts/import-state.js
 
 # Or import from a custom state endpoint
-node scripts/import-state.js https://your-spk-node.com/state
+docker exec honeygraph-api node scripts/import-state.js https://your-spk-node.com/state
 ```
 
 **Note**: The import may show some parsing errors for certain data types - this is normal and won't affect the core functionality.
@@ -67,9 +68,15 @@ curl http://localhost:3030/fs/disregardfiat/
 curl http://localhost:3030/health
 
 # Query GraphQL
-curl -X POST http://localhost:3030/graphql \
+curl -X POST http://localhost:3030/api/graphql \
   -H "Content-Type: application/json" \
-  -d '{"query": "{ accounts(first: 5) { username larynxBalance } }"}'
+  -d '{"query": "{ __schema { queryType { name } } }"}'
+
+# Check available networks
+curl http://localhost:3030/api/networks
+
+# Check specific network info
+curl http://localhost:3030/api/network/spkccT_/info
 ```
 
 ## API Endpoints
@@ -81,8 +88,13 @@ curl -X POST http://localhost:3030/graphql \
 - `GET /fss/:username/` - Files shared by user
 
 ### GraphQL API
-- `POST /graphql` - Main GraphQL endpoint
-- `GET /graphql` - GraphQL Playground UI
+- `POST /api/graphql` - Main GraphQL endpoint
+- `GET /api/graphql` - GraphQL schema introspection
+
+### Multi-Token Network API
+- `GET /api/networks` - List all networks
+- `GET /api/network/{prefix}/info` - Network information
+- `GET /api/token/{symbol}/info` - Token information
 
 ### Other APIs
 - `GET /health` - Service health check
@@ -212,11 +224,29 @@ docker logs honeygraph-alpha -f
 
 ## Next Steps
 
-1. **Set up continuous sync** with SPK Network nodes
-2. **Configure authentication** for write operations
-3. **Set up monitoring** and alerting
+1. **Set up continuous sync** with SPK Network nodes (WebSocket streaming)
+2. **Configure authentication** for write operations if needed
+3. **Set up monitoring** and alerting for production
 4. **Optimize queries** for your use case
-5. **Enable multi-token support** if needed
+5. **Configure live data streaming** from Honeycomb nodes
+
+## Live Data Streaming from Honeycomb
+
+To connect Honeygraph to a live Honeycomb node for real-time data streaming, configure the Honeycomb node to send data to your Honeygraph instance:
+
+```javascript
+// In your Honeycomb node configuration
+{
+  "honeygraph": {
+    "enabled": true,
+    "url": "http://your-honeygraph-instance:3030",
+    "batchSize": 100,
+    "flushInterval": 1000
+  }
+}
+```
+
+This will enable real-time blockchain data streaming from your Honeycomb node to Honeygraph.
 
 For more information, see:
 - [Architecture Overview](ARCHITECTURE.md)

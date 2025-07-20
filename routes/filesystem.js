@@ -358,36 +358,34 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
       });
     }
     
-    // Query the path tree for this user and directory using UID
-    const pathQuery = `
-      query getPath($userUid: string, $fullPath: string) {
-        path(func: eq(fullPath, $fullPath)) @filter(uid_in(owner, $userUid)) {
+    // Normalize directory path
+    const normalizedPath = directoryPath === '' ? '/' : directoryPath;
+    
+    // Query all paths for this user to build directory structure
+    const allPathsQuery = `
+      query getAllPaths($userUid: string) {
+        paths(func: type(Path)) @filter(uid_in(owner, $userUid)) {
           fullPath
           pathName
           pathType
           itemCount
-          children {
-            fullPath
-            pathName
-            pathType
-            itemCount
-            currentFile {
-              cid
-              name
-              extension
-              size
-              mimeType
-              license
-              labels
-              thumbnail
-              contract {
-                id
-                blockNumber
-                encryptionData
-                storageNodes {
-                  storageAccount {
-                    username
-                  }
+          currentFile {
+            cid
+            name
+            extension
+            size
+            mimeType
+            license
+            labels
+            thumbnail
+            flags
+            contract {
+              id
+              blockNumber
+              encryptionData
+              storageNodes {
+                storageAccount {
+                  username
                 }
               }
             }
@@ -396,105 +394,93 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
       }
     `;
 
-    logger.info('Querying path tree', { 
+    logger.info('Querying all paths for user', { 
       username, 
-      directoryPath,
+      directoryPath: normalizedPath,
       userUid: user.uid
     });
     
     let result;
     try {
-      const vars = { 
-        $userUid: user.uid,
-        $fullPath: directoryPath
-      };
-      logger.info('Query variables', vars);
-      result = await networkClient.query(pathQuery, vars);
+      result = await networkClient.query(allPathsQuery, { $userUid: user.uid });
       
-      logger.info('Path query result', { 
-        pathCount: result.path?.length || 0,
-        queryVars: vars,
-        result: JSON.stringify(result).substring(0, 200)
+      logger.info('All paths query result', { 
+        pathCount: result.paths?.length || 0,
+        firstFewPaths: result.paths?.slice(0, 5).map(p => ({ fullPath: p.fullPath, pathType: p.pathType }))
       });
     } catch (error) {
-      logger.error('Path query failed', { error: error.message, stack: error.stack });
+      logger.error('All paths query failed', { error: error.message, stack: error.stack });
       throw error;
     }
 
-    // If no path found, return empty directory
-    if (!result.path || result.path.length === 0) {
-      logger.info('No path found, returning empty directory');
-      return res.json({
-        path: directoryPath,
-        username: username,
-        type: 'directory',
-        contents: []
-      });
-    }
-    
-    const pathData = result.path[0];
-    const contents = [];
+    const allPaths = result.paths || [];
+    const contents = new Map(); // Use Map to handle duplicates
     
     // Add preset folders if at root
-    if (directoryPath === '/' || directoryPath === '') {
-      const presetFolders = {
-        'Documents': '/Documents',
-        'Images': '/Images',
-        'Videos': '/Videos',
-        'Music': '/Music',
-        'Archives': '/Archives',
-        'Code': '/Code',
-        'Trash': '/Trash',
-        'Misc': '/Misc'
-      };
+    if (normalizedPath === '/') {
+      const presetFolders = [
+        'Documents', 'Images', 'Videos', 'Music', 'Archives', 'Code', 'Trash', 'Misc'
+      ];
       
-      for (const [name, path] of Object.entries(presetFolders)) {
-        // Check if this preset exists in children
-        const child = pathData.children?.find(c => c.pathName === name);
-        if (child) {
-          contents.push({
-            name: child.pathName,
-            type: 'directory',
-            path: child.fullPath,
-            itemCount: child.itemCount || 0
-          });
-        } else {
-          // Add empty preset
-          contents.push({
-            name: name,
-            type: 'directory',
-            path: path,
-            itemCount: 0
-          });
-        }
+      for (const folderName of presetFolders) {
+        contents.set(folderName, {
+          name: folderName,
+          type: 'directory',
+          path: `/${folderName}`,
+          itemCount: 0
+        });
       }
     }
     
-    // Process children from path tree
-    if (pathData.children) {
-      for (const child of pathData.children) {
-        // Skip if already added as preset
-        if (directoryPath === '/' && ['Documents', 'Images', 'Videos', 'Music', 'Archives', 'Code', 'Trash', 'Misc'].includes(child.pathName)) {
-          continue;
+    // Process all paths to find items in the requested directory
+    for (const pathEntity of allPaths) {
+      const { fullPath, pathName, pathType, currentFile } = pathEntity;
+      
+      // Skip paths that don't belong to the requested directory
+      if (pathType === 'directory') {
+        // For directories, check if this is a direct child of the requested path
+        if (normalizedPath === '/') {
+          // Root directory - include top-level directories
+          if (fullPath !== '/' && !fullPath.includes('/', 1)) {
+            const dirName = fullPath.startsWith('/') ? fullPath.slice(1) : fullPath;
+            contents.set(dirName, {
+              name: dirName,
+              type: 'directory',
+              path: fullPath,
+              itemCount: pathEntity.itemCount || 0
+            });
+          }
+        } else {
+          // Subdirectory - check if this is a direct child
+          const expectedPrefix = normalizedPath === '/' ? '/' : normalizedPath + '/';
+          if (fullPath.startsWith(expectedPrefix) && fullPath !== normalizedPath) {
+            const remainingPath = fullPath.slice(expectedPrefix.length);
+            // Only include if it's a direct child (no more slashes)
+            if (!remainingPath.includes('/')) {
+              contents.set(pathName, {
+                name: pathName,
+                type: 'directory',
+                path: fullPath,
+                itemCount: pathEntity.itemCount || 0
+              });
+            }
+          }
         }
+      } else if (pathType === 'file' && currentFile) {
+        // For files, check if they're directly in the requested directory
+        const fileDir = fullPath.substring(0, fullPath.lastIndexOf('/')) || '/';
         
-        if (child.pathType === 'directory') {
-          contents.push({
-            name: child.pathName,
-            type: 'directory',
-            path: child.fullPath,
-            itemCount: child.itemCount || 0
-          });
-        } else if (child.pathType === 'file' && child.currentFile) {
-          const file = child.currentFile;
-          const contract = file.contract;
+        if (fileDir === normalizedPath) {
+          const file = currentFile;
           
           // Skip files with bitflag 2 (thumbnails/hidden)
           if ((file.flags || 0) & 2) {
             continue;
           }
           
-          contents.push({
+          const contract = file.contract;
+          
+          contents.set(file.name, {
             name: file.name,
             type: 'file',
             cid: file.cid,
@@ -504,15 +490,15 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
             license: file.license || '',
             labels: file.labels || '',
             thumbnail: file.thumbnail || '',
-            contract: {
+            contract: contract ? {
               id: contract.id,
               blockNumber: contract.blockNumber,
               encryptionData: contract.encryptionData || null,
               storageNodeCount: contract.storageNodes ? contract.storageNodes.length : 0,
               storageNodes: contract.storageNodes ? contract.storageNodes.map(n => n.storageAccount?.username).filter(Boolean) : []
-            },
+            } : null,
             metadata: {
-              encrypted: contract.encryptionData ? true : false,
+              encrypted: contract?.encryptionData ? true : false,
               autoRenew: true // TODO: get from contract metadata
             }
           });
@@ -520,20 +506,48 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
       }
     }
     
+    // Update item counts for preset directories based on actual content
+    if (normalizedPath === '/') {
+      for (const pathEntity of allPaths) {
+        if (pathEntity.pathType === 'file' && pathEntity.currentFile) {
+          const fileDir = pathEntity.fullPath.substring(0, pathEntity.fullPath.lastIndexOf('/')) || '/';
+          const topLevelDir = fileDir.split('/')[1]; // Get first path component after root
+          
+          if (topLevelDir && contents.has(topLevelDir)) {
+            const dirItem = contents.get(topLevelDir);
+            // Count files that aren't hidden
+            if (!((pathEntity.currentFile.flags || 0) & 2)) {
+              dirItem.itemCount = (dirItem.itemCount || 0) + 1;
+            }
+          }
+        }
+      }
+    }
+    
+    // Convert map to sorted array
+    const contentsArray = Array.from(contents.values());
+    
     // Sort contents: directories first, then files, alphabetically
-    contents.sort((a, b) => {
+    contentsArray.sort((a, b) => {
       if (a.type !== b.type) {
         return a.type === 'directory' ? -1 : 1;
       }
       return a.name.localeCompare(b.name);
     });
 
+    logger.info('Directory listing result', {
+      directoryPath: normalizedPath,
+      itemCount: contentsArray.length,
+      directories: contentsArray.filter(i => i.type === 'directory').length,
+      files: contentsArray.filter(i => i.type === 'file').length
+    });
+
     // Format response
     const directoryResponse = {
-      path: directoryPath,
+      path: normalizedPath,
       username: username,
       type: 'directory',
-      contents: contents
+      contents: contentsArray
     };
 
     res.json(directoryResponse);

@@ -1,0 +1,32 @@
+# ZFS-enabled container for testing
+FROM ubuntu:22.04
+
+# Install ZFS utilities and dependencies
+RUN apt-get update && apt-get install -y \
+    zfsutils-linux \
+    curl \
+    sudo \
+    kmod \
+    udev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create directory for ZFS pool
+RUN mkdir -p /zfs-pool
+
+# Create initialization script for ZFS pool
+COPY docker/scripts/init-zfs.sh /usr/local/bin/init-zfs.sh
+RUN chmod +x /usr/local/bin/init-zfs.sh
+
+# Install Node.js for running tests
+RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install -y nodejs
+
+# Create non-root user with sudo access
+RUN useradd -m -s /bin/bash testuser && \
+    echo 'testuser ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+
+WORKDIR /app
+
+# Initialize ZFS pool on startup
+ENTRYPOINT ["/usr/local/bin/init-zfs.sh"]
+CMD ["tail", "-f", "/dev/null"]

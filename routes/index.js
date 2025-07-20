@@ -71,14 +71,14 @@ export function createRouter({ dgraphClient, forkManager, replicationQueue, zfsC
     requireAuthorization: process.env.REQUIRE_HIVE_AUTH === 'true' 
   });
 
-  // Mount sub-routers with optional authentication
-  router.use('/replicate', hiveAuth, createReplicationRoutes({ 
-    dgraphClient, 
-    forkManager, 
-    replicationQueue,
-    schemas,
-    validate 
-  }));
+  // NOTE: HTTP replication endpoints removed - data streaming happens via WebSocket at /fork-stream
+  // router.use('/replicate', hiveAuth, createReplicationRoutes({ 
+  //   dgraphClient, 
+  //   forkManager, 
+  //   replicationQueue,
+  //   schemas,
+  //   validate 
+  // }));
   
   router.use('/query', createQueryRoutes({ 
     dgraphClient, 

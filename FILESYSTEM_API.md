@@ -48,11 +48,14 @@ GET /fs/alice/Documents/Projects
       "numberOfItems": 1
     },
     {
-      "name": "tutorial.mp4",
+      "name": "tutorial",
+      "ext": "mp4",
       "type": "file",
       "cid": "QmXkEeNVh3Q2wK8MG5RCxA2tZsJmZaHtBFmkYgAPndu5jC",
       "size": 52428800,
-      "mimeType": "video/mp4",
+      "flags": 0,
+      "license": null,
+      "labels": "",
       "contract": {
         "id": "alice:0:94477061-457c1cb54b53658ec034b719ff8c158bd85ea430",
         "blockNumber": 94477061

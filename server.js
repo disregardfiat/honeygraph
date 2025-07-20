@@ -134,8 +134,15 @@ app.use('/api/read', limiter);
 app.use('/api/write', strictLimiter);
 app.use('/api/replicate', strictLimiter);
 
-// Import filesystem routes separately for root-level mounting
+// Import filesystem and docs routes separately for root-level mounting
 import { createFileSystemRoutes } from './routes/filesystem.js';
+import { createDocsRoutes } from './routes/docs.js';
+
+// Serve static files from public directory
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Mount docs routes
+app.use('/api/docs', createDocsRoutes());
 
 // Mount filesystem routes at root for clean URLs
 app.use('/', createFileSystemRoutes({ dgraphClient, networkManager }));

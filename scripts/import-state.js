@@ -191,9 +191,22 @@ class StateImporter {
             operations.push(createOp(['stats', key], value));
           } else if (category === 'contract') {
             // Contracts have special nesting: contract.username.contractId
+            // But contractId is in format "username:type:block-txid"
+            // We need to extract just the block-txid part for the path
             if (typeof value === 'object' && value !== null) {
+              console.log(chalk.blue(`Processing contracts for user: ${key} with ${Object.keys(value).length} contracts`));
               for (const [contractId, contractData] of Object.entries(value)) {
-                operations.push(createOp(['contract', key, contractId], contractData));
+                // Parse contractId format: "username:type:block-txid"
+                const parts = contractId.split(':');
+                if (parts.length >= 3) {
+                  const blockTxid = parts.slice(2).join(':'); // Handle cases with colons in txid
+                  console.log(chalk.gray(`  Creating operation: ['contract', '${key}', '${blockTxid}']`));
+                  operations.push(createOp(['contract', key, blockTxid], contractData));
+                } else {
+                  // Fallback for unexpected format
+                  console.log(chalk.gray(`  Fallback operation: ['contract', '${key}', '${contractId}']`));
+                  operations.push(createOp(['contract', key, contractId], contractData));
+                }
               }
             }
           } else if (typeof value === 'object' && value !== null) {

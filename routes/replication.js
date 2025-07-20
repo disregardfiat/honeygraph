@@ -9,7 +9,7 @@ export function createReplicationRoutes({ dgraphClient, forkManager, replication
     operations: Joi.array().items(schemas.operation).min(1).required()
   })), async (req, res) => {
     try {
-      const { blockData, operations } = req.body;
+      const { operations, ...blockData } = req.body;
       
       // Add to replication queue
       const jobId = await replicationQueue.addBlockReplication(blockData, operations);
@@ -28,7 +28,7 @@ export function createReplicationRoutes({ dgraphClient, forkManager, replication
   // Update consensus
   router.post('/consensus', validate(schemas.consensusData), async (req, res) => {
     try {
-      const { consensusData } = req.body;
+      const consensusData = req.body;
       
       // Add to replication queue with high priority
       const jobId = await replicationQueue.addConsensusUpdate(consensusData);

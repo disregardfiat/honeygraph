@@ -1,0 +1,30 @@
+# Test runner container
+FROM node:18-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    sudo \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create test user
+RUN useradd -m -s /bin/bash testuser && \
+    echo 'testuser ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy source code
+COPY . .
+
+# Switch to test user
+USER testuser
+
+# Default command
+CMD ["npm", "test"]

@@ -1,7 +1,7 @@
 export default {
   testEnvironment: 'node',
   transform: {},
-  setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
+  setupFilesAfterEnv: ['<rootDir>/test/setup.js'],
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1'
   },
@@ -12,6 +12,20 @@ export default {
     'lib/**/*.js',
     'routes/**/*.js',
     'scripts/**/*.js',
+    '!lib/**/*.test.js',
     '!**/node_modules/**'
-  ]
+  ],
+  coverageReporters: [
+    'text',
+    'lcov',
+    'html'
+  ],
+  coverageDirectory: 'coverage',
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '/coverage/'
+  ],
+  verbose: true,
+  detectOpenHandles: true,
+  forceExit: true
 };

@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+  # Redis for Bull queue testing
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    networks:
+      - honeygraph-test
+
+  # ZFS-enabled container for testing checkpoints
+  zfs-test:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.zfs-test
+    privileged: true
+    volumes:
+      - zfs-pool:/zfs-pool
+      - ./:/app
+    working_dir: /app
+    environment:
+      - ZFS_POOL_NAME=testpool
+      - ZFS_DATASET=testpool/honeygraph
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+    networks:
+      - honeygraph-test
+    command: tail -f /dev/null
+
+  # Dgraph for integration testing
+  dgraph-zero:
+    image: dgraph/dgraph:v23.1.0
+    volumes:
+      - dgraph-zero:/dgraph
+    ports:
+      - "5080:5080"
+      - "6080:6080"
+    command: dgraph zero --my=dgraph-zero:5080
+    networks:
+      - honeygraph-test
+
+  dgraph-alpha:
+    image: dgraph/dgraph:v23.1.0
+    volumes:
+      - dgraph-alpha:/dgraph
+    ports:
+      - "8080:8080"
+      - "9080:9080"
+    command: dgraph alpha --my=dgraph-alpha:7080 --zero=dgraph-zero:5080 --security whitelist=0.0.0.0/0
+    depends_on:
+      - dgraph-zero
+    networks:
+      - honeygraph-test
+
+  # Test runner with ZFS support
+  test-runner:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.test
+    volumes:
+      - ./:/app
+      - zfs-pool:/zfs-pool
+    working_dir: /app
+    environment:
+      - NODE_ENV=test
+      - ZFS_DATASET=testpool/honeygraph
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DGRAPH_ALPHA_URL=dgraph-alpha:9080
+    depends_on:
+      - redis
+      - dgraph-alpha
+      - zfs-test
+    networks:
+      - honeygraph-test
+
+volumes:
+  redis-data:
+  dgraph-zero:
+  dgraph-alpha:
+  zfs-pool:
+    driver: local
+
+networks:
+  honeygraph-test:
+    driver: bridge
