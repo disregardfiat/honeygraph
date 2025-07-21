@@ -30,7 +30,7 @@ honeycomb-spkcc nodes → Honeygraph API → Bull Queue → Dgraph
 
 1. **Clone the repository**:
 ```bash
-git clone https://github.com/your-org/honeygraph.git
+git clone https://github.com/disregardfiat/honeygraph.git
 cd honeygraph
 ```
 
@@ -47,12 +47,12 @@ npm install
 
 4. **Start the services**:
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 5. **Initialize the schema**:
 ```bash
-docker-compose exec honeygraph-api npm run init-schema
+docker compose exec honeygraph-api npm run init-schema
 ```
 Import the spk network data(Optional)
 ```bash
@@ -78,7 +78,7 @@ AUTHORIZED_HONEYCOMB_NODES=your-node1,your-node2
 
 2. **Restart the services**:
 ```bash
-docker-compose restart honeygraph-api
+docker compose up --build honeygraph-api
 ```
 
 3. **Configure your honeycomb node** to authenticate (see [Authentication Guide](docs/AUTHENTICATION.md))
