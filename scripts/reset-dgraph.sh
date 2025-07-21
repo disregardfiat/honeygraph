@@ -28,7 +28,7 @@ cd "$PROJECT_ROOT"
 
 echo ""
 echo "1️⃣  Stopping Dgraph containers..."
-docker-compose down -v  # -v removes volumes
+docker compose down -v  # -v removes volumes
 
 echo ""
 echo "2️⃣  Removing Dgraph volumes..."
@@ -47,7 +47,7 @@ rm -rf ./zw 2>/dev/null || true
 
 echo ""
 echo "4️⃣  Starting fresh Dgraph containers..."
-docker-compose up -d dgraph-zero dgraph-alpha dgraph-ratel
+docker compose up -d dgraph-zero dgraph-alpha dgraph-ratel
 
 echo ""
 echo "5️⃣  Waiting for Dgraph to be ready..."
@@ -105,7 +105,7 @@ fi
 
 echo ""
 echo "7️⃣  Starting Honeygraph application..."
-docker-compose up -d
+docker compose up -d
 
 echo ""
 echo "✨ Dgraph has been reset successfully!"
