@@ -23,7 +23,7 @@ echo ""
 
 # Check if Dgraph is running
 echo "🔍 Checking Dgraph status..."
-if ! curl -s http://localhost:8180/health > /dev/null 2>&1; then
+if ! curl -s http://dgraph-alpha:8080/health > /dev/null 2>&1; then
     echo "❌ Error: Dgraph is not running!"
     echo ""
     echo "Start Dgraph with:"
@@ -38,7 +38,7 @@ echo ""
 
 # Check if schema is loaded
 echo "📋 Checking schema..."
-SCHEMA_CHECK=$(curl -sX POST http://localhost:8180/query -H "Content-Type: application/dql" -d 'schema {}' | grep -c '"name":"Account"' || true)
+SCHEMA_CHECK=$(curl -sX POST http://dgraph-alpha:8080/query -H "Content-Type: application/dql" -d 'schema {}' | grep -c '"name":"Account"' || true)
 if [ "$SCHEMA_CHECK" -eq 0 ]; then
     echo "⚠️  Warning: Schema not loaded or Account type not found"
     echo "Run ./scripts/update-schema.sh or ./scripts/reset-dgraph.sh first"
