@@ -52,6 +52,9 @@ docker compose up -d
 
 5. **Initialize SPK Testnet with complete file system**:
 ```bash
+# Import ALL SPK data from public testnet API (https://spktest.dlux.io/state)
+# Includes: accounts, balances, tokens, contracts, DEX data, services, etc.
+# Uses individual processing for contracts, batch processing for other data
 docker exec honeygraph-api node scripts/init-spk-testnet.js
 ```
 
@@ -60,12 +63,25 @@ docker exec honeygraph-api node scripts/init-spk-testnet.js
 # Check health
 curl http://localhost:3030/health
 
-# Test filesystem API (example with user 'disregardfiat')
+# Test filesystem API - should show directories with file counts
 curl http://localhost:3030/fs/disregardfiat/
 
-# Test SPK user API
+# Test a specific directory - should show actual files
+curl http://localhost:3030/fs/disregardfiat/Ragnarok/
+
+# Test SPK user API (confirms all data imported)
 curl http://localhost:3030/api/spk/user/disregardfiat
+
+# Test account balances
+curl "http://localhost:3030/api/spk/user/disregardfiat?include=all" | jq '.larynxBalance, .spkBalance'
 ```
+
+**Expected Results:**
+- Health check: `{"status":"healthy"}`
+- Root filesystem: Should show directories like "Ragnarok", "NFTs" with `itemCount > 0`
+- Directory contents: Should show array of files with `name`, `cid`, `type: "file"`
+- User API: Should return complete user data with `larynxBalance`, `spkBalance`, contracts, etc.
+- Balances: Should show numeric values (not null), confirming all SPK data imported
 
 ### Complete Reset (Clean Slate)
 
@@ -78,7 +94,7 @@ echo "" | ./scripts/reset-dgraph.sh
 # Remove any remaining Docker volumes
 docker volume prune -f
 
-# Initialize fresh SPK testnet
+# Initialize fresh SPK testnet with all data
 docker exec honeygraph-api node scripts/init-spk-testnet.js
 ```
 
@@ -212,11 +228,55 @@ The system automatically:
 4. Orphans non-consensus forks
 5. Allows querying any fork's state
 
+## Troubleshooting
+
+### Filesystem API Returns Empty Directories
+
+If directories show file counts but browsing into them returns no files:
+
+1. **Check the import completed successfully**:
+```bash
+# Look for "✨ Processed X contracts successfully!" and "Import completed successfully!"
+docker logs honeygraph-api | tail -30
+```
+
+2. **Verify data exists in database**:
+```bash
+# Should return a number > 0
+curl -s "http://localhost:3030/fs/disregardfiat/" | jq '.contents[] | select(.itemCount > 0) | .itemCount'
+```
+
+3. **Try the reset and reimport**:
+```bash
+echo "" | ./scripts/reset-dgraph.sh
+docker exec honeygraph-api node scripts/init-spk-testnet.js
+```
+
+### Import Script Fails
+
+If the import script encounters errors:
+
+1. **Check network connectivity**:
+```bash
+curl -s https://spktest.dlux.io/state | jq '.state.contract | keys | length'
+```
+
+2. **Check Dgraph is ready**:
+```bash
+docker exec honeygraph-alpha curl -s http://localhost:8080/health
+```
+
+3. **Check container logs**:
+```bash
+docker logs honeygraph-api
+docker logs honeygraph-alpha
+```
+
 ## Performance
 
 - Dgraph provides sub-millisecond query times
 - Bull queue ensures reliable processing
-- Batch operations reduce overhead
+- Individual contract processing prevents timeout errors
 - Automatic pruning keeps database size manageable
 
 ## ZFS Checkpoints (Advanced Feature)

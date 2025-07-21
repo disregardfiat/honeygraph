@@ -139,26 +139,61 @@ async function main() {
       if (stateData.state[pathKey]) {
         let operations;
         
-        // Special handling for contracts - keep them as complete objects
+        // Special handling for contracts - process individually for reliability
         if (pathKey === 'contract') {
-          operations = [];
+          console.log(chalk.yellow(`\nProcessing contracts individually for maximum reliability...`));
+          let contractsProcessed = 0;
+          let contractsErrors = 0;
+          
           for (const [username, userContracts] of Object.entries(stateData.state[pathKey])) {
             for (const [contractId, contractData] of Object.entries(userContracts)) {
-              operations.push({
-                type: 'put',
-                path: ['contract', username, contractId],
-                data: contractData,
-                blockNum: stateData.state.stats?.block_num || 0,
-                timestamp: Date.now()
-              });
+              try {
+                const operation = {
+                  type: 'put',
+                  path: ['contract', username, contractId],
+                  data: contractData,
+                  blockNum: stateData.state.stats?.block_num || 0,
+                  timestamp: Date.now()
+                };
+                
+                // Process single contract
+                const mutations = await transformer.transformOperation(operation);
+                
+                if (mutations.length > 0) {
+                  const txn = dgraphClient.client.newTxn();
+                  try {
+                    const mu = new dgraph.Mutation();
+                    mu.setSetJson(mutations);
+                    await txn.mutate(mu);
+                    await txn.commit();
+                    contractsProcessed++;
+                  } catch (error) {
+                    console.log(chalk.red(`Contract import error ${contractId}: ${error.message}`));
+                    contractsErrors++;
+                  } finally {
+                    await txn.discard();
+                  }
+                }
+              } catch (error) {
+                console.log(chalk.red(`Contract transform error ${contractId}: ${error.message}`));
+                contractsErrors++;
+              }
             }
           }
+          
+          console.log(chalk.green(`✨ Processed ${contractsProcessed} contracts successfully!`));
+          if (contractsErrors > 0) {
+            console.log(chalk.yellow(`⚠️  ${contractsErrors} contracts failed`));
+          }
+          
+          totalOperations += contractsProcessed;
+          continue; // Skip the batch processing below for contracts
         } else {
           // For other paths, use the normal flattening
           operations = flattenStateToOperations(stateData.state[pathKey], [pathKey], stateData.state.stats?.block_num || 0);
         }
         
-        // Process operations in batch to enable file deduplication
+        // Process other data types in batch (not contracts)
         if (operations.length > 0) {
           try {
             const blockInfo = {
