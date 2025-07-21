@@ -26,7 +26,7 @@ honeycomb-spkcc nodes → Honeygraph API → Bull Queue → Dgraph
 - Node.js 18+ (for local development)
 - Git
 
-### Quick Start
+### Quick Start - Complete SPK Network Setup
 
 1. **Clone the repository**:
 ```bash
@@ -34,10 +34,10 @@ git clone https://github.com/disregardfiat/honeygraph.git
 cd honeygraph
 ```
 
-2. **Configure environment**:
+2. **Configure environment** (optional):
 ```bash
 cp .env.example .env
-# Edit .env to set your configuration
+# Edit .env to set your configuration if needed
 ```
 
 3. **Install dependencies** (for local development):
@@ -50,18 +50,39 @@ npm install
 docker compose up -d
 ```
 
-5. **Initialize the schema**:
+5. **Initialize SPK Testnet with complete file system**:
 ```bash
-docker compose exec honeygraph-api npm run init-schema
+docker exec honeygraph-api node scripts/init-spk-testnet.js
 ```
-Import the spk network data(Optional)
+
+6. **Verify setup**:
 ```bash
-docker exec -it honeygraph-api ./scripts/import-state.sh
-```
-6. **Check health**:
-```bash
+# Check health
 curl http://localhost:3030/health
+
+# Test filesystem API (example with user 'disregardfiat')
+curl http://localhost:3030/fs/disregardfiat/
+
+# Test SPK user API
+curl http://localhost:3030/api/spk/user/disregardfiat
 ```
+
+### Complete Reset (Clean Slate)
+
+To completely reset your local setup and start fresh:
+
+```bash
+# Run the reset script (removes ALL data)
+echo "" | ./scripts/reset-dgraph.sh
+
+# Remove any remaining Docker volumes
+docker volume prune -f
+
+# Initialize fresh SPK testnet
+docker exec honeygraph-api node scripts/init-spk-testnet.js
+```
+
+**⚠️ Warning**: This will delete ALL local data permanently!
 
 ### Authentication Setup
 
@@ -82,6 +103,21 @@ docker compose up --build honeygraph-api
 ```
 
 3. **Configure your honeycomb node** to authenticate (see [Authentication Guide](docs/AUTHENTICATION.md))
+
+## Working APIs After Setup
+
+### File System API (Primary Feature)
+- `GET /fs/:username/` - Browse user's virtual file system
+- `GET /fs/:username/path/to/folder/` - Browse specific directory
+- `GET /fs/:username/path/to/file.ext` - Redirect to IPFS file
+- `GET /fse/:username/` - Files shared with user (encrypted)
+- `GET /fss/:username/` - Files shared by user
+
+### SPK Network APIs
+- `GET /api/spk/user/:username` - Complete user profile with balances
+- `GET /api/spk/files/search` - Search files across network
+- `GET /api/spk/storage/stats` - Network storage statistics
+- `GET /api/spk/richlist/:token` - Token holder rankings (larynx/spk/power)
 
 ## API Endpoints
 

@@ -470,7 +470,11 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
         // For files, check if they're directly in the requested directory
         const fileDir = fullPath.substring(0, fullPath.lastIndexOf('/')) || '/';
         
-        if (fileDir === normalizedPath) {
+        // Normalize both paths to handle trailing slash differences
+        const normalizedFileDir = fileDir === '/' ? '/' : fileDir;
+        const normalizedRequestPath = normalizedPath === '/' ? '/' : normalizedPath.replace(/\/$/, '');
+        
+        if (normalizedFileDir === normalizedRequestPath) {
           const file = currentFile;
           
           // Skip files with bitflag 2 (thumbnails/hidden)

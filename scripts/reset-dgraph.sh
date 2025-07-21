@@ -55,7 +55,7 @@ echo "5️⃣  Waiting for Dgraph to be ready..."
 MAX_ATTEMPTS=30
 ATTEMPT=1
 while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
-    if curl -s http://localhost:8080/health > /dev/null; then
+    if docker exec honeygraph-alpha curl -s http://localhost:8080/health > /dev/null 2>&1; then
         echo "✅ Dgraph is ready!"
         break
     fi
@@ -92,7 +92,7 @@ fi
 echo "   Using schema file: $SCHEMA_FILE"
 
 # Load the schema
-curl -X POST localhost:8080/admin/schema --data-binary "@$SCHEMA_FILE"
+docker exec honeygraph-alpha curl -X POST http://localhost:8080/admin/schema --data-binary "@/schema/$(basename "$SCHEMA_FILE")"
 
 if [ $? -eq 0 ]; then
     echo ""
@@ -110,9 +110,9 @@ docker compose up -d
 echo ""
 echo "✨ Dgraph has been reset successfully!"
 echo ""
-echo "📊 Dgraph Ratel UI: http://localhost:8000"
-echo "🔍 Dgraph Alpha: http://localhost:8080"
-echo "🌐 Honeygraph API: http://localhost:4000"
+echo "📊 Dgraph Ratel UI: http://localhost:8000 (not exposed externally)"
+echo "🔍 Dgraph Alpha: http://localhost:8080 (not exposed externally)"
+echo "🌐 Honeygraph API: http://localhost:3030"
 echo ""
 echo "Next steps:"
 echo "1. Verify the schema in Ratel UI"
