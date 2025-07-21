@@ -54,7 +54,10 @@ docker-compose up -d
 ```bash
 docker-compose exec honeygraph-api npm run init-schema
 ```
-
+Import the spk network data(Optional)
+```bash
+docker exec -it honeygraph-api ./scripts/import-state.sh
+```
 6. **Check health**:
 ```bash
 curl http://localhost:3030/health
