@@ -110,9 +110,11 @@ describe('Account Deduplication', () => {
 
       const mutations2 = await transformer.transformOperations(batch2, blockInfo);
       
-      // Second batch should NOT create a new account mutation
+      // Second batch should create account mutation with updated balance data
       const accountMutations2 = mutations2.filter(m => m['dgraph.type'] === 'Account');
-      expect(accountMutations2.length).toBe(0); // No new account created
+      expect(accountMutations2.length).toBe(1); // Updated account created
+      expect(accountMutations2[0].username).toBe('testuser');
+      expect(accountMutations2[0].spkBlock).toBe(500); // New balance field
     });
 
     test('should handle existing database accounts correctly', async () => {
@@ -132,9 +134,11 @@ describe('Account Deduplication', () => {
       const blockInfo = { blockNum: 12345, timestamp: Date.now() };
       const mutations = await transformer.transformOperations(operations, blockInfo);
       
-      // Should NOT create new account mutation for existing user
+      // Should create account mutation for existing user with updated balance
       const accountMutations = mutations.filter(m => m['dgraph.type'] === 'Account');
-      expect(accountMutations.length).toBe(0);
+      expect(accountMutations.length).toBe(1);
+      expect(accountMutations[0].uid).toBe('0x123'); // Uses existing UID
+      expect(accountMutations[0].larynxBalance).toBe(1000); // Has new balance data
       
       // Should query database for existing account
       expect(mockDgraphClient.query).toHaveBeenCalledWith(
@@ -162,9 +166,12 @@ describe('Account Deduplication', () => {
           expect(accountMutations.length).toBe(1);
           firstAccountUid = accountMutations[0].uid;
         } else {
-          // Subsequent batches should not create new accounts
+          // Subsequent batches should create account mutations with updates
           const accountMutations = mutations.filter(m => m['dgraph.type'] === 'Account');
-          expect(accountMutations.length).toBe(0);
+          expect(accountMutations.length).toBe(1);
+          // Should use the same UID as the first batch
+          expect(accountMutations[0].uid).toBe(firstAccountUid);
+          expect(accountMutations[0].username).toBe('testuser');
         }
       }
 
