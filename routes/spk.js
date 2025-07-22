@@ -191,10 +191,10 @@ export function createSPKRoutes({ dgraphClient, dataTransformer, schemas, valida
     try {
       const query = `
         {
-          totalFiles: count(func: type(File))
-          totalContracts: count(func: type(StorageContract))
-          activeContracts: count(func: type(StorageContract)) @filter(eq(status, "ACTIVE"))
-          totalNodes: count(func: type(StorageNode))
+          totalFiles(func: type(File)) { count(uid) }
+          totalContracts(func: type(StorageContract)) { count(uid) }
+          activeContracts(func: type(StorageContract)) @filter(eq(status, "ACTIVE")) { count(uid) }
+          totalNodes(func: type(StorageNode)) { count(uid) }
           
           topNodes(func: type(StorageNode), orderdesc: reliability, first: 10) {
             account {
@@ -218,7 +218,16 @@ export function createSPKRoutes({ dgraphClient, dataTransformer, schemas, valida
       `;
       
       const result = await dgraphClient.client.newTxn().query(query);
-      res.json(result.getJson());
+      const data = result.getJson();
+      
+      res.json({
+        totalFiles: data.totalFiles?.[0]?.count || 0,
+        totalContracts: data.totalContracts?.[0]?.count || 0,
+        activeContracts: data.activeContracts?.[0]?.count || 0,
+        totalNodes: data.totalNodes?.[0]?.count || 0,
+        topNodes: data.topNodes || [],
+        recentFiles: data.recentFiles || []
+      });
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
@@ -367,9 +376,9 @@ export function createSPKRoutes({ dgraphClient, dataTransformer, schemas, valida
             totalPower: sum(power)
           }
           
-          activeNodes: count(func: type(NodeMarket))
-          activeContracts: count(func: type(StorageContract)) @filter(eq(status, "ACTIVE"))
-          totalStorage: sum(func: type(File)) {
+          activeNodes(func: type(NodeMarket)) { count(uid) }
+          activeContracts(func: type(StorageContract)) @filter(eq(status, "ACTIVE")) { count(uid) }
+          totalStorage(func: type(File)) {
             total: sum(size)
           }
           
@@ -380,23 +389,7 @@ export function createSPKRoutes({ dgraphClient, dataTransformer, schemas, valida
       `;
       
       const result = await dgraphClient.client.newTxn().query(query);
-      const data = result.getJson();
-      
-      res.json({
-        supply: {
-          larynx: data.supply?.[0]?.totalLarynx || 0,
-          spk: data.supply?.[0]?.totalSPK || 0,
-          power: data.supply?.[0]?.totalPower || 0
-        },
-        network: {
-          activeNodes: data.activeNodes?.[0]?.count || 0,
-          activeContracts: data.activeContracts?.[0]?.count || 0,
-          totalStorage: data.totalStorage?.[0]?.total || 0
-        },
-        dex: {
-          volume24h: data.dexVolume?.[0]?.volume || 0
-        }
-      });
+      res.json(result.getJson());
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
