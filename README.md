@@ -48,6 +48,7 @@ npm install
 4. **Start the services**:
 ```bash
 docker compose up -d
+sudo ./scripts/setup-zfs.sh
 ```
 
 5. **Initialize SPK Testnet with complete file system**:

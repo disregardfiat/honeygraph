@@ -61,12 +61,7 @@ export function validate(schema) {
 
 export function createRouter({ dgraphClient, forkManager, replicationQueue, zfsCheckpoints, peerSync, networkManager }) {
   const router = Router();
-  
-  // Get spkccT_ network client if available
-  const spkNetwork = networkManager ? networkManager.getNetwork('spkccT_') : null;
-  const spkDgraphClient = spkNetwork ? spkNetwork.dgraphClient : dgraphClient;
-  
-  const dataTransformer = createDataTransformer(spkDgraphClient, networkManager);
+  const dataTransformer = createDataTransformer(dgraphClient, networkManager);
 
   // Authentication routes (no auth required for these)
   router.use('/auth', createAuthRoutes({ dgraphClient }));
@@ -117,7 +112,7 @@ export function createRouter({ dgraphClient, forkManager, replicationQueue, zfsC
   }));
   
   router.use('/spk', createSPKRoutes({ 
-    dgraphClient: spkDgraphClient,
+    dgraphClient,
     dataTransformer,
     schemas,
     validate 
