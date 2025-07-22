@@ -52,6 +52,7 @@ docker compose up -d
 
 5. **Initialize SPK Testnet with complete file system**:
 ```bash
+docker exec honeygraph-api node scripts/init-schema.js
 # Import ALL SPK data from public testnet API (https://spktest.dlux.io/state)
 # Includes: accounts, balances, tokens, contracts, DEX data, services, etc.
 # Uses individual processing for contracts, batch processing for other data
@@ -95,6 +96,7 @@ echo "" | ./scripts/reset-dgraph.sh
 docker volume prune -f
 
 # Initialize fresh SPK testnet with all data
+docker exec honeygraph-api node scripts/init-schema.js
 docker exec honeygraph-api node scripts/init-spk-testnet.js
 ```
 

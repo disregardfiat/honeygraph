@@ -56,6 +56,20 @@ type Account {
   
   # Authorities
   publicKey: String @search(by: [hash]) # authorities[account]
+  authorityData: String # Complex authority data as JSON
+  
+  # Runner node information
+  runnerNode: RunnerNode @hasInverse(field: account) # runners[account]
+  
+  # Additional balances
+  unclaimedBroca: Int @search(by: [int]) # ubroca[account] - unclaimed BROCA
+  unclaimedBrocaExpires: Int # Expiration block for unclaimed BROCA
+  unclaimedBrocaSource: String # Source of unclaimed BROCA
+  
+  # SPK power with delegation tracking
+  spkPowerSelf: Int # Self-owned SPK power
+  spkPowerDelegated: Int # Delegated SPK power
+  spkDelegators: [String] # List of delegators
   
   # NFT ownership (keeping for compatibility)
   nfts: [NFT] @hasInverse(field: owner)
@@ -64,6 +78,21 @@ type Account {
   # Metadata
   createdAt: DateTime
   lastActivity: DateTime @search(by: [hour])
+}
+
+# Runner node information
+type RunnerNode {
+  id: ID!
+  account: Account!
+  api: String! @search(by: [term])
+  location: String @search(by: [term])
+  version: String @search(by: [term])
+  lastSeen: Int @search(by: [int])
+  services: [String]
+  active: Boolean! @search
+  uptime: Float @search(by: [float])
+  latency: Float @search(by: [float])
+  successRate: Float @search(by: [float])
 }
 
 # Storage contract (from contract[purchaser:type:block-txid])
@@ -742,6 +771,48 @@ type OrderCancellation {
   market: DexMarket!
   orderType: OrderType!
   cancelledAt: Int! @search(by: [int]) # Block number
+  timestamp: DateTime! @search(by: [hour])
+}
+
+# Price feed data for various token pairs
+type PriceFeed {
+  id: String! @id # Format: baseCurrency_quoteCurrency
+  baseCurrency: String! @search(by: [term])
+  quoteCurrency: String! @search(by: [term])
+  price: Float! @search(by: [float])
+  volume: Float @search(by: [float])
+  source: String @search(by: [term])
+  timestamp: DateTime! @search(by: [hour])
+}
+
+# Chain state configuration and parameters
+type ChainState {
+  id: ID!
+  key: String! @search(by: [term])
+  subKey: String @search(by: [term])
+  value: String! # JSON encoded for complex values
+  timestamp: DateTime! @search(by: [hour])
+}
+
+# Scheduled operations for future execution
+type ScheduledOperation {
+  id: ID!
+  scheduledBlock: Int! @search(by: [int])
+  operationId: String! @search(by: [term])
+  operationType: String! @search(by: [term])
+  target: String @search(by: [term])
+  targetData: String
+  operationData: String # JSON encoded operation details
+  timestamp: DateTime! @search(by: [hour])
+}
+
+# Network statistics and metrics
+type NetworkStats {
+  id: ID!
+  statKey: String! @search(by: [term])
+  statCategory: String @search(by: [term])
+  statValue: String! # Can be number or JSON
+  blockNumber: Int! @search(by: [int])
   timestamp: DateTime! @search(by: [hour])
 }
 

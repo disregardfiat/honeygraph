@@ -23,16 +23,13 @@ export function createSPKRoutes({ dgraphClient, dataTransformer, schemas, valida
       
       if (include === 'all' || include.includes('contracts')) {
         query += `
-            contracts @facets {
+            contracts: ~purchaser @filter(type(StorageContract)) {
               id
-              price
-              duration
               status
               expiresBlock
-              files: dataFiles
-              storageNodes {
-                username
-              }
+              fileCount
+              utilized
+              power
             }
             contractsStoring @facets {
               id
