@@ -171,8 +171,8 @@ app.get('/health', async (req, res) => {
       .filter(a => a.trim())
       .map(a => a.trim().toLowerCase());
     
-    // Get WebSocket stats
-    const wsStats = wsHandler.getStats();
+    // Get WebSocket stats from fork handler
+    const wsStats = forkHandler.getStats ? forkHandler.getStats() : {};
     
     // Get connected nodes from fork handler
     const connectedNodes = forkHandler.getConnectedNodes ? forkHandler.getConnectedNodes() : [];
