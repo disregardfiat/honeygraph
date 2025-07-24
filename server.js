@@ -164,11 +164,31 @@ app.get('/api/honeygraph-peers', (req, res) => {
 app.get('/health', async (req, res) => {
   try {
     await dgraphClient.health();
+    
+    // Get authorized accounts
+    const authorizedAccounts = (process.env.AUTHORIZED_HONEYCOMB_NODES || '')
+      .split(',')
+      .filter(a => a.trim())
+      .map(a => a.trim().toLowerCase());
+    
+    // Get WebSocket stats
+    const wsStats = wsHandler.getStats();
+    
+    // Get connected nodes from fork handler
+    const connectedNodes = forkHandler.getConnectedNodes ? forkHandler.getConnectedNodes() : [];
+    
     res.json({ 
       status: 'healthy',
       service: 'honeygraph',
       uptime: process.uptime(),
-      memory: process.memoryUsage()
+      memory: process.memoryUsage(),
+      websocket: wsStats,
+      authorization: {
+        enabled: process.env.REQUIRE_HIVE_AUTH === 'true',
+        mode: authorizedAccounts.length > 0 ? 'whitelist' : 'any-authenticated',
+        authorizedNodes: authorizedAccounts.length > 0 ? authorizedAccounts : ['any authenticated Hive account'],
+        connectedNodes: connectedNodes
+      }
     });
   } catch (error) {
     res.status(503).json({ 
@@ -229,6 +249,9 @@ const forkHandler = new WSForkHandler({
   forkRetentionTime: 3600000 * 72, // 1 hour
   operationBufferSize: 10000
 });
+
+// Set the WebSocket server reference after it's created
+forkHandler.wss = wss;
 
 // Start periodic cleanup
 forkHandler.startCleanup();
