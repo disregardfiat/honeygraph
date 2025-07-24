@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # Reset Dgraph for Honeygraph
-# This script clears all Dgraph data and reloads the schema
+# This script clears all Dgraph data and starts fresh containers
+# Schema loading should be done by init scripts (e.g., init-spk-testnet.js)
 
 set -e  # Exit on error
 
@@ -70,41 +71,7 @@ if [ $ATTEMPT -gt $MAX_ATTEMPTS ]; then
 fi
 
 echo ""
-echo "6️⃣  Loading schema..."
-# Check if schema file exists
-SCHEMA_FILE="$PROJECT_ROOT/schema/spk-schema-cleaned.graphql"
-if [ ! -f "$SCHEMA_FILE" ]; then
-    echo "   ⚠️  Schema file not found: $SCHEMA_FILE"
-    echo "   Looking for alternative schema files..."
-    
-    # Try other possible schema locations
-    if [ -f "$PROJECT_ROOT/schema/schema.graphql" ]; then
-        SCHEMA_FILE="$PROJECT_ROOT/schema/schema.graphql"
-    elif [ -f "$PROJECT_ROOT/dgraph-schema.graphql" ]; then
-        SCHEMA_FILE="$PROJECT_ROOT/dgraph-schema.graphql"
-    else
-        echo "   ❌ No schema file found!"
-        echo "   Please ensure your schema file exists"
-        exit 1
-    fi
-fi
-
-echo "   Using schema file: $SCHEMA_FILE"
-
-# Load the schema
-docker exec honeygraph-alpha curl -X POST http://localhost:8080/admin/schema --data-binary "@/schema/$(basename "$SCHEMA_FILE")"
-
-if [ $? -eq 0 ]; then
-    echo ""
-    echo "✅ Schema loaded successfully!"
-else
-    echo ""
-    echo "❌ Failed to load schema"
-    exit 1
-fi
-
-echo ""
-echo "7️⃣  Starting Honeygraph application..."
+echo "6️⃣  Starting Honeygraph application..."
 docker compose up -d
 
 echo ""
@@ -115,6 +82,9 @@ echo "🔍 Dgraph Alpha: http://localhost:8080 (not exposed externally)"
 echo "🌐 Honeygraph API: http://localhost:3030"
 echo ""
 echo "Next steps:"
-echo "1. Verify the schema in Ratel UI"
-echo "2. Start syncing data with: npm run sync"
+echo "1. Initialize the SPK testnet schema and data:"
+echo "   docker exec honeygraph-api node scripts/init-spk-testnet.js"
+echo "2. Or import from a specific state file:"
+echo "   docker exec honeygraph-api node scripts/import-state.js"
+echo "3. Verify the schema in Ratel UI"
 echo ""
