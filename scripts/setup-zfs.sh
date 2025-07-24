@@ -34,9 +34,48 @@ echo ""
 
 # Check if pool exists
 if ! zpool list $POOL_NAME &> /dev/null; then
-    echo "Error: ZFS pool '$POOL_NAME' not found"
-    echo "Create a pool first with: zpool create $POOL_NAME /dev/sdX"
-    exit 1
+    echo "⚠️  Warning: ZFS pool '$POOL_NAME' not found"
+    echo ""
+    echo "ZFS pools available on this system:"
+    zpool list 2>/dev/null || echo "  No ZFS pools found"
+    echo ""
+    echo "Available block devices:"
+    lsblk -d -o NAME,SIZE,TYPE,MOUNTPOINT | grep -E "^(sd|nvme|vd)" || echo "  No suitable devices found"
+    echo ""
+    echo "Options:"
+    echo "1. Create a ZFS pool manually:"
+    echo "   zpool create $POOL_NAME /dev/sdX  (replace sdX with your device)"
+    echo "   zpool create $POOL_NAME /path/to/file  (for testing with a file)"
+    echo ""
+    echo "2. Use an existing pool by setting ZFS_POOL environment variable:"
+    echo "   export ZFS_POOL=existing_pool_name"
+    echo "   sudo -E ./scripts/setup-zfs.sh"
+    echo ""
+    echo "3. Create a test pool with a file (for development only):"
+    echo -n "   Would you like to create a test pool using a file? (y/N): "
+    read response
+    
+    if [[ "$response" =~ ^[Yy]$ ]]; then
+        echo "Creating test ZFS pool..."
+        TEST_FILE="/var/lib/zfs-test-$POOL_NAME.img"
+        
+        # Create a 10GB sparse file
+        truncate -s 10G "$TEST_FILE"
+        
+        # Create the pool
+        if zpool create "$POOL_NAME" "$TEST_FILE"; then
+            echo "✅ Test pool '$POOL_NAME' created successfully"
+            echo "⚠️  WARNING: This is a file-based pool for testing only!"
+            echo "   For production, use real block devices."
+            echo ""
+        else
+            echo "❌ Failed to create test pool"
+            exit 1
+        fi
+    else
+        echo "Please create a ZFS pool and run this script again."
+        exit 1
+    fi
 fi
 
 # Create datasets for Dgraph

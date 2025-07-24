@@ -296,6 +296,17 @@ Honeygraph supports ZFS snapshots for instant rollback capability:
 
 1. **Prepare ZFS**:
 ```bash
+# First, ensure you have a ZFS pool. Options:
+# Option 1: Create a pool with a dedicated disk
+sudo zpool create tank /dev/sdX  # Replace sdX with your disk
+
+# Option 2: Use an existing pool
+export ZFS_POOL=existing_pool_name
+
+# Option 3: Create a test pool (development only)
+# The setup script will offer to create a file-based pool
+
+# Then run the setup script
 sudo ./scripts/setup-zfs.sh
 ```
 
