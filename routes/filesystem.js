@@ -362,58 +362,83 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
     const normalizedPath = directoryPath === '' ? '/' : directoryPath;
     
     // Query all paths for this user to build directory structure
-    const allPathsQuery = `
-      query getAllPaths($userUid: string) {
-        paths(func: type(Path)) @filter(uid_in(owner, $userUid)) {
-          fullPath
-          pathName
-          pathType
-          itemCount
-          currentFile {
-            cid
-            name
-            extension
-            size
-            mimeType
-            license
-            labels
-            thumbnail
-            flags
-            contract {
-              id
-              blockNumber
-              encryptionData
-              storageNodes {
-                storageAccount {
-                  username
+    // Use pagination to avoid exceeding gRPC message size limits
+    const pageSize = 1000;
+    let offset = 0;
+    let allPaths = [];
+    let hasMore = true;
+    
+    while (hasMore) {
+      const allPathsQuery = `
+        query getAllPaths($userUid: string, $offset: int, $limit: int) {
+          paths(func: type(Path), first: $limit, offset: $offset) @filter(uid_in(owner, $userUid)) {
+            fullPath
+            pathName
+            pathType
+            itemCount
+            currentFile {
+              cid
+              name
+              extension
+              size
+              mimeType
+              license
+              labels
+              thumbnail
+              flags
+              contract {
+                id
+                blockNumber
+                encryptionData
+                storageNodes {
+                  storageAccount {
+                    username
+                  }
                 }
               }
             }
           }
         }
-      }
-    `;
+      `;
 
-    logger.info('Querying all paths for user', { 
-      username, 
-      directoryPath: normalizedPath,
-      userUid: user.uid
-    });
-    
-    let result;
-    try {
-      result = await networkClient.query(allPathsQuery, { $userUid: user.uid });
-      
-      logger.info('All paths query result', { 
-        pathCount: result.paths?.length || 0,
-        firstFewPaths: result.paths?.slice(0, 5).map(p => ({ fullPath: p.fullPath, pathType: p.pathType }))
+      logger.info('Querying paths page for user', { 
+        username, 
+        directoryPath: normalizedPath,
+        userUid: user.uid,
+        offset,
+        limit: pageSize
       });
-    } catch (error) {
-      logger.error('All paths query failed', { error: error.message, stack: error.stack });
-      throw error;
+      
+      let result;
+      try {
+        result = await networkClient.query(allPathsQuery, { 
+          $userUid: user.uid,
+          $offset: offset,
+          $limit: pageSize
+        });
+        
+        const pagePaths = result.paths || [];
+        allPaths = allPaths.concat(pagePaths);
+        
+        logger.info('Paths page query result', { 
+          pagePathCount: pagePaths.length,
+          totalPathCount: allPaths.length,
+          offset
+        });
+        
+        // Check if we got a full page (meaning there might be more)
+        hasMore = pagePaths.length === pageSize;
+        offset += pageSize;
+        
+      } catch (error) {
+        logger.error('Paths page query failed', { 
+          error: error.message, 
+          stack: error.stack,
+          offset 
+        });
+        throw error;
+      }
     }
-
-    const allPaths = result.paths || [];
     const contents = new Map(); // Use Map to handle duplicates
     
     // Add preset folders if at root
