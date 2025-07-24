@@ -177,6 +177,7 @@ flags: int .
 license: string @index(term) .
 labels: string @index(term) .
 thumbnail: string @index(term) .
+parentPath: uid @reverse .
 
 # Account type - represents user accounts with token balances
 type Account {
@@ -235,6 +236,7 @@ type ContractFile {
   labels
   thumbnail
   contract
+  parentPath  # Reference to the Path directory containing this file
 }
 
 # Storage Node Validation predicates
@@ -271,18 +273,18 @@ parent: uid @reverse .
 children: [uid] @reverse .
 # owner: uid @reverse . # Already defined above in Account predicates
 itemCount: int @index(int) .
-currentFile: uid .
+files: [uid] @reverse .
 newestBlockNumber: int @index(int) .
 
-# Path type - represents directory structure for each user
+# Path type - represents directory structure for each user (directories only)
 type Path {
   fullPath
   pathName
-  pathType
+  pathType  # Always 'directory' now
   parent
-  children
+  children  # Child directories
   owner
   itemCount
-  currentFile
+  files     # Files in this directory
   newestBlockNumber
 }

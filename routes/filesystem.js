@@ -371,12 +371,13 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
     while (hasMore) {
       const allPathsQuery = `
         query getAllPaths($userUid: string, $offset: int, $limit: int) {
-          paths(func: type(Path), first: $limit, offset: $offset) @filter(uid_in(owner, $userUid)) {
+          paths(func: type(Path), first: $limit, offset: $offset) @filter(uid_in(owner, $userUid) AND eq(pathType, "directory")) {
             fullPath
             pathName
             pathType
             itemCount
-            currentFile {
+            files {
+              uid
               cid
               name
               extension
@@ -459,99 +460,63 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
     
     // Process all paths to find items in the requested directory
     for (const pathEntity of allPaths) {
-      const { fullPath, pathName, pathType, currentFile } = pathEntity;
+      const { fullPath, pathName, files } = pathEntity;
       
-      // Skip paths that don't belong to the requested directory
-      if (pathType === 'directory') {
-        // For directories, check if this is a direct child of the requested path
-        if (normalizedPath === '/') {
-          // Root directory - include top-level directories
-          if (fullPath !== '/' && !fullPath.includes('/', 1)) {
-            const dirName = fullPath.startsWith('/') ? fullPath.slice(1) : fullPath;
-            contents.set(dirName, {
-              name: dirName,
-              type: 'directory',
-              path: fullPath,
-              itemCount: pathEntity.itemCount || 0
+      // Check if this path is the requested directory
+      if (fullPath === normalizedPath) {
+        // Add files from this directory
+        if (files && files.length > 0) {
+          for (const file of files) {
+            // Skip files with bitflag 2 (thumbnails/hidden)
+            if ((file.flags || 0) & 2) {
+              continue;
+            }
+            
+            const contract = file.contract;
+            
+            contents.set(file.name, {
+              name: file.name,
+              type: 'file',
+              cid: file.cid,
+              extension: file.extension || '',
+              size: file.size,
+              mimeType: file.mimeType,
+              license: file.license || '',
+              labels: file.labels || '',
+              thumbnail: file.thumbnail || '',
+              contract: contract ? {
+                id: contract.id,
+                blockNumber: contract.blockNumber,
+                encryptionData: contract.encryptionData || null,
+                storageNodeCount: contract.storageNodes ? contract.storageNodes.length : 0,
+                storageNodes: contract.storageNodes ? contract.storageNodes.map(n => n.storageAccount?.username).filter(Boolean) : []
+              } : null,
+              metadata: {
+                encrypted: contract?.encryptionData ? true : false,
+                autoRenew: true // TODO: get from contract metadata
+              }
             });
           }
-        } else {
-          // Subdirectory - check if this is a direct child
-          const expectedPrefix = normalizedPath === '/' ? '/' : normalizedPath + '/';
-          if (fullPath.startsWith(expectedPrefix) && fullPath !== normalizedPath) {
-            const remainingPath = fullPath.slice(expectedPrefix.length);
-            // Only include if it's a direct child (no more slashes)
-            if (!remainingPath.includes('/')) {
-              contents.set(pathName, {
-                name: pathName,
-                type: 'directory',
-                path: fullPath,
-                itemCount: pathEntity.itemCount || 0
-              });
-            }
-          }
         }
-      } else if (pathType === 'file' && currentFile) {
-        // For files, check if they're directly in the requested directory
-        const fileDir = fullPath.substring(0, fullPath.lastIndexOf('/')) || '/';
-        
-        // Normalize both paths to handle trailing slash differences
-        const normalizedFileDir = fileDir === '/' ? '/' : fileDir;
-        const normalizedRequestPath = normalizedPath === '/' ? '/' : normalizedPath.replace(/\/$/, '');
-        
-        if (normalizedFileDir === normalizedRequestPath) {
-          const file = currentFile;
-          
-          // Skip files with bitflag 2 (thumbnails/hidden)
-          if ((file.flags || 0) & 2) {
-            continue;
+      } else if (fullPath.startsWith(normalizedPath)) {
+        // Check if this is a direct child directory
+        const prefix = normalizedPath === '/' ? '/' : normalizedPath + '/';
+        if (fullPath.startsWith(prefix) && fullPath !== normalizedPath) {
+          const remainingPath = fullPath.slice(prefix.length);
+          // Only include if it's a direct child (no more slashes)
+          if (!remainingPath.includes('/')) {
+            contents.set(pathName, {
+              name: pathName,
+              type: 'directory',
+              path: fullPath,
+              itemCount: files ? files.filter(f => !((f.flags || 0) & 2)).length : 0
+            });
           }
-          
-          const contract = file.contract;
-          
-          contents.set(file.name, {
-            name: file.name,
-            type: 'file',
-            cid: file.cid,
-            extension: file.extension || '',
-            size: file.size,
-            mimeType: file.mimeType,
-            license: file.license || '',
-            labels: file.labels || '',
-            thumbnail: file.thumbnail || '',
-            contract: contract ? {
-              id: contract.id,
-              blockNumber: contract.blockNumber,
-              encryptionData: contract.encryptionData || null,
-              storageNodeCount: contract.storageNodes ? contract.storageNodes.length : 0,
-              storageNodes: contract.storageNodes ? contract.storageNodes.map(n => n.storageAccount?.username).filter(Boolean) : []
-            } : null,
-            metadata: {
-              encrypted: contract?.encryptionData ? true : false,
-              autoRenew: true // TODO: get from contract metadata
-            }
-          });
         }
       }
     }
     
-    // Update item counts for preset directories based on actual content
-    if (normalizedPath === '/') {
-      for (const pathEntity of allPaths) {
-        if (pathEntity.pathType === 'file' && pathEntity.currentFile) {
-          const fileDir = pathEntity.fullPath.substring(0, pathEntity.fullPath.lastIndexOf('/')) || '/';
-          const topLevelDir = fileDir.split('/')[1]; // Get first path component after root
-          
-          if (topLevelDir && contents.has(topLevelDir)) {
-            const dirItem = contents.get(topLevelDir);
-            // Count files that aren't hidden
-            if (!((pathEntity.currentFile.flags || 0) & 2)) {
-              dirItem.itemCount = (dirItem.itemCount || 0) + 1;
-            }
-          }
-        }
-      }
-    }
+    // Item counts are now calculated directly from the files array in each path
     
     // Convert map to sorted array
     const contentsArray = Array.from(contents.values());

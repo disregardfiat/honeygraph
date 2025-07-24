@@ -12,94 +12,65 @@ async function cleanupDuplicatePaths() {
   let spinner = ora('Querying for duplicate paths...').start();
   
   try {
-    // Query to find all paths grouped by owner and fullPath
+    // Simple query to find duplicate paths
     const duplicateQuery = `
-      {
-        var(func: type(Path)) {
-          owner as owner.username
-          path as fullPath
-          count_by_owner_path as count(uid) @groupby(owner, path)
-        }
-        
-        duplicates(func: uid(count_by_owner_path)) @filter(gt(val(count_by_owner_path), 1)) {
-          owner: owner.username
-          fullPath
-          ~owner @filter(type(Path) AND eq(fullPath, val(path))) {
-            uid
-            fullPath
-            pathType
-            newestBlockNumber
-            currentFile {
-              uid
-            }
-          }
-        }
-      }
-    `;
-    
-    // First, let's get a count of duplicates
-    const countQuery = `
-      {
+      query findDuplicatePaths {
         paths(func: type(Path)) {
-          total: count(uid)
-        }
-        
-        uniquePaths as var(func: type(Path)) @groupby(owner.username, fullPath) {
-          count as count(uid)
-        }
-        
-        duplicateCount() {
-          totalPaths: sum(val(count))
-          uniqueCount: count(uid(uniquePaths))
-        }
-      }
-    `;
-    
-    spinner.text = 'Counting duplicate paths...';
-    const countResult = await dgraphClient.query(countQuery);
-    
-    const totalPaths = countResult.paths?.[0]?.total || 0;
-    const stats = countResult.duplicateCount?.[0] || {};
-    
-    spinner.succeed(`Found ${totalPaths} total paths`);
-    console.log(chalk.yellow(`Unique path combinations: ${stats.uniqueCount || 0}`));
-    console.log(chalk.yellow(`Duplicate paths to clean: ${totalPaths - (stats.uniqueCount || 0)}`));
-    
-    // Now find and remove duplicates
-    spinner = ora('Finding duplicate paths to remove...').start();
-    
-    // Query to find duplicate paths
-    const findDuplicatesQuery = `
-      query findDuplicates {
-        paths(func: type(Path)) @groupby(owner.username, fullPath) {
-          owner: owner.username
+          uid
           fullPath
-          paths: ~owner @filter(type(Path)) {
+          pathType
+          owner {
             uid
-            fullPath
-            pathType
-            newestBlockNumber
-            currentFile {
-              uid
-            }
-            itemCount
-            created: min(uid)
+            username
           }
+          newestBlockNumber
+          currentFile {
+            uid
+          }
+          itemCount
         }
       }
     `;
     
-    const dupsResult = await dgraphClient.query(findDuplicatesQuery);
+    // Get all paths and group them manually
+    spinner.text = 'Fetching all paths...';
+    const result = await dgraphClient.query(duplicateQuery);
+    const allPaths = result.paths || [];
     
-    // Process each group of paths
-    let deleteCount = 0;
+    spinner.succeed(`Found ${allPaths.length} total paths`);
+    
+    // Group paths by owner + fullPath
+    const pathGroups = new Map();
+    for (const path of allPaths) {
+      if (!path.owner || !path.owner.username) continue;
+      
+      const key = `${path.owner.username}:${path.fullPath}`;
+      if (!pathGroups.has(key)) {
+        pathGroups.set(key, []);
+      }
+      pathGroups.get(key).push(path);
+    }
+    
+    // Count duplicates
+    let duplicateCount = 0;
+    for (const [key, paths] of pathGroups.entries()) {
+      if (paths.length > 1) {
+        duplicateCount += paths.length - 1;
+      }
+    }
+    
+    console.log(chalk.yellow(`Unique path combinations: ${pathGroups.size}`));
+    console.log(chalk.yellow(`Duplicate paths to clean: ${duplicateCount}`));
+    
+    // Process duplicates
+    spinner = ora('Processing duplicate paths...').start();
     const deletions = [];
     
-    for (const group of dupsResult.paths || []) {
-      if (group.paths && group.paths.length > 1) {
+    for (const [key, paths] of pathGroups.entries()) {
+      if (paths.length > 1) {
         // Sort by newestBlockNumber (keep the one with highest block number)
         // If block numbers are equal, keep the one with lowest UID (oldest)
-        const sorted = group.paths.sort((a, b) => {
+        const sorted = paths.sort((a, b) => {
           const blockDiff = (b.newestBlockNumber || 0) - (a.newestBlockNumber || 0);
           if (blockDiff !== 0) return blockDiff;
           
@@ -111,7 +82,7 @@ async function cleanupDuplicatePaths() {
         const toKeep = sorted[0];
         const toDelete = sorted.slice(1);
         
-        logger.info(`Found ${toDelete.length} duplicates for ${group.owner}:${group.fullPath}`, {
+        logger.info(`Found ${toDelete.length} duplicates for ${key}`, {
           keeping: toKeep.uid,
           deleting: toDelete.map(p => p.uid)
         });
@@ -121,20 +92,19 @@ async function cleanupDuplicatePaths() {
             uid: path.uid,
             'dgraph.type': 'Path'
           });
-          deleteCount++;
         }
       }
     }
     
-    spinner.succeed(`Found ${deleteCount} duplicate paths to remove`);
+    spinner.succeed(`Found ${deletions.length} duplicate paths to remove`);
     
-    if (deleteCount === 0) {
+    if (deletions.length === 0) {
       console.log(chalk.green('No duplicate paths found!'));
       return;
     }
     
     // Ask for confirmation
-    console.log(chalk.yellow(`\nThis will delete ${deleteCount} duplicate Path entries.`));
+    console.log(chalk.yellow(`\nThis will delete ${deletions.length} duplicate Path entries.`));
     console.log(chalk.yellow('The newest version of each path will be preserved.'));
     console.log(chalk.red('\nThis operation cannot be undone!'));
     
@@ -175,21 +145,23 @@ async function cleanupDuplicatePaths() {
       }
     }
     
-    spinner.succeed(`Successfully deleted ${deleteCount} duplicate paths`);
+    spinner.succeed(`Successfully deleted ${deletions.length} duplicate paths`);
     
     // Verify the cleanup
     spinner = ora('Verifying cleanup...').start();
-    const verifyResult = await dgraphClient.query(countQuery);
-    const newTotal = verifyResult.paths?.[0]?.total || 0;
+    const verifyResult = await dgraphClient.query(duplicateQuery);
+    const newTotal = verifyResult.paths?.length || 0;
     
-    spinner.succeed(`Cleanup complete! Paths reduced from ${totalPaths} to ${newTotal}`);
+    spinner.succeed(`Cleanup complete! Paths reduced from ${allPaths.length} to ${newTotal}`);
     
   } catch (error) {
     spinner.fail('Cleanup failed');
     logger.error('Error during cleanup', { error: error.message, stack: error.stack });
     process.exit(1);
   } finally {
-    dgraphClient.disconnect();
+    if (dgraphClient.clientStub) {
+      dgraphClient.clientStub.close();
+    }
   }
 }
 
