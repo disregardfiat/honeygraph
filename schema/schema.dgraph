@@ -1,290 +1,67 @@
-# Dgraph Schema for Honeygraph
+statBlockNumber: int @index(int) .
 
-# Block type
-blockNum: int @index(int) .
-blockHash: string @index(hash) .
-previousHash: string @index(hash) .
-timestamp: datetime @index(hour) .
-forkId: string @index(hash, term) .
-isFinalized: bool @index(bool) .
-operations: [uid] @reverse .
-checkpoint: uid @reverse .
-
-# Operation type
-op.id: string @index(exact) .
-block: uid .
-op.blockNum: int @index(int) .
-op.index: int .
-op.type: string @index(term) .
-op.path: string @index(term, fulltext) .
-op.data: string .
-op.previousValue: string .
-
-# State type
-state.path: string @index(exact, term) .
-state.value: string .
-state.blockNum: int @index(int) .
-state.lastModified: datetime @index(hour) .
-state.forkId: string @index(term) .
-state.history: [uid] @reverse .
-
-# StateHistory type
-history.blockNum: int @index(int) .
-history.operation: uid .
-history.value: string .
-history.timestamp: datetime .
-history.state: uid .
-
-# Fork type
-fork.id: string @index(exact) .
-fork.parentFork: string @index(exact) .
-fork.branchBlock: int @index(int) .
-fork.tipBlock: int @index(int) .
-fork.isActive: bool @index(bool) .
-fork.consensusScore: float .
-fork.blocks: [uid] @reverse .
-
-# Checkpoint type
-checkpoint.blockNum: int @index(int) .
-checkpoint.hash: string @index(hash) .
-checkpoint.zfsSnapshot: string @index(exact) .
-checkpoint.timestamp: datetime @index(hour) .
-checkpoint.validated: bool @index(bool) .
-checkpoint.block: uid .
-
-# Peer type
-peer.id: string @index(exact) .
-peer.endpoint: string @index(exact) .
-peer.lastSeen: datetime @index(hour) .
-peer.version: string .
-peer.isActive: bool @index(bool) .
-peer.syncStatus: string @index(term) .
-
-# Type definitions
-type Block {
-  blockNum
-  blockHash
-  previousHash
-  timestamp
-  forkId
-  isFinalized
-  operations
-  checkpoint
-}
-
-type Operation {
-  op.id
-  block
-  op.blockNum
-  op.index
-  op.type
-  op.path
-  op.data
-  op.previousValue
-}
-
-type State {
-  state.path
-  state.value
-  state.blockNum
-  state.lastModified
-  state.forkId
-  state.history
-}
-
-type StateHistory {
-  history.blockNum
-  history.operation
-  history.value
-  history.timestamp
-  history.state
-}
-
-type Fork {
-  fork.id
-  fork.parentFork
-  fork.branchBlock
-  fork.tipBlock
-  fork.isActive
-  fork.consensusScore
-  fork.blocks
-}
-
-type Checkpoint {
-  checkpoint.blockNum
-  checkpoint.hash
-  checkpoint.zfsSnapshot
-  checkpoint.timestamp
-  checkpoint.validated
-  checkpoint.block
-}
-
-type Peer {
-  peer.id
-  peer.endpoint
-  peer.lastSeen
-  peer.version
-  peer.isActive
-  peer.syncStatus
-}
-
-# Account predicates
-username: string @index(hash, term) .
-larynxBalance: int .
-spkBalance: int .
-broca: int .
-brocaAmount: int .
-brocaLastUpdate: datetime .
-liquidBroca: int .
-claimableLarynx: int .
-claimableBroca: int .
-claimableSpk: int .
-power: int @index(int) .
-powerGranted: int .
-contract: uid @reverse .
-contracts: [uid] @reverse .
-owner: uid @reverse .
-storageAccount: uid @reverse .
-storageBroca: int .
-validatorBroca: int .
-
-# Contract predicates
-id: string @index(hash, term) .
-purchaser: uid @reverse .
-contractType: int @index(int) .
-blockNumber: int @index(int) .
-txid: string @index(hash) .
-authorized: int @index(int) .
-broker: string @index(term) .
-status: int @index(int) .
-refunded: int @index(int) .
-utilized: int @index(int) .
-verified: int @index(int) .
-expiresBlock: int @index(int) .
-fileCount: int @index(int) .
-encryptionData: string .
-metadata: string .
-storageNodes: [uid] @reverse .
-
-# ContractFile predicates
-cid: string @index(hash) .
-name: string @index(term, fulltext) .
-extension: string @index(term) .
-size: int @index(int) .
-path: string @index(term) .
-mimeType: string @index(term) .
-flags: int .
-license: string @index(term) .
-labels: string @index(term) .
-thumbnail: string @index(term) .
-parentPath: uid @reverse .
-
-# Account type - represents user accounts with token balances
-type Account {
-  username
-  larynxBalance
-  spkBalance
-  broca
-  brocaAmount
-  brocaLastUpdate
-  liquidBroca
-  claimableLarynx
-  claimableBroca
-  claimableSpk
-  power
-  powerGranted
-  contract
-  contracts
-  owner
-  storageAccount
-  storageBroca
-  validatorBroca
-}
-
-# Storage Contract type
-type StorageContract {
-  id
-  purchaser
-  owner
-  contractType
+# Network Stats type - for storing various network statistics
+type NetworkStats {
+  statKey
+  statCategory
+  statValue
   blockNumber
-  txid
-  authorized
-  broker
-  status
-  power
-  refunded
-  utilized
-  verified
-  expiresBlock
-  fileCount
-  encryptionData
-  metadata
-  storageNodes
+  timestamp
 }
 
-# Contract File type
-type ContractFile {
-  cid
-  name
-  extension
-  size
-  path
-  mimeType
-  flags
-  license
-  labels
-  thumbnail
-  contract
-  parentPath  # Reference to the Path directory containing this file
+# SPK Test Network Schema Extensions
+# This schema is applied in addition to the base schema for the spkccT_ network
+
+# SPK-specific predicates
+SPKValidator.account: uid @reverse .
+SPKValidator.pubKey: string @index(hash) .
+SPKValidator.code: string @index(exact) .
+SPKValidator.domain: string @index(exact) .
+SPKValidator.votes: int .
+SPKValidator.rank: int .
+SPKValidator.active: bool @index(bool) .
+SPKValidator.lastBlock: int .
+SPKValidator.consensusRate: float .
+
+# SPK Types
+type SPKValidator {
+  SPKValidator.account
+  SPKValidator.pubKey
+  SPKValidator.code
+  SPKValidator.domain
+  SPKValidator.votes
+  SPKValidator.rank
+  SPKValidator.active
+  SPKValidator.lastBlock
+  SPKValidator.consensusRate
 }
 
-# Storage Node Validation predicates
-validated: bool @index(bool) .
+# LARYNX Mining specific
+LarynxMiner.account: uid @reverse .
+LarynxMiner.power: int .
+LarynxMiner.miningRate: float .
+LarynxMiner.lastClaim: datetime .
+LarynxMiner.totalMined: int .
 
-# Storage Node Validation type
-type StorageNodeValidation {
-  storageAccount
-  contract
-  validated
+type LarynxMiner {
+  LarynxMiner.account
+  LarynxMiner.power
+  LarynxMiner.miningRate
+  LarynxMiner.lastClaim
+  LarynxMiner.totalMined
 }
 
-# Encryption Key predicates
-encryptedKey: string @index(hash) .
-keyType: string @index(term) .
-sharedWith: uid @reverse .
-sharedBy: uid @reverse .
-keyContract: uid @reverse .
+# BROCA specific
+BrocaRegeneration.account: uid @reverse .
+BrocaRegeneration.baseAmount: int .
+BrocaRegeneration.regenerationRate: float .
+BrocaRegeneration.lastUpdate: int .
+BrocaRegeneration.maxBroca: int .
 
-# Encryption Key type - represents encrypted keys shared between users
-type EncryptionKey {
-  encryptedKey
-  keyType
-  sharedWith
-  sharedBy
-  keyContract
-}
-
-# Path predicates
-fullPath: string @index(exact, term) .
-pathName: string @index(term) .
-pathType: string @index(term) .
-parent: uid @reverse .
-children: [uid] @reverse .
-# owner: uid @reverse . # Already defined above in Account predicates
-itemCount: int @index(int) .
-files: [uid] @reverse .
-newestBlockNumber: int @index(int) .
-
-# Path type - represents directory structure for each user (directories only)
-type Path {
-  fullPath
-  pathName
-  pathType  # Always 'directory' now
-  parent
-  children  # Child directories
-  owner
-  itemCount
-  files     # Files in this directory
-  newestBlockNumber
+type BrocaRegeneration {
+  BrocaRegeneration.account
+  BrocaRegeneration.baseAmount
+  BrocaRegeneration.regenerationRate
+  BrocaRegeneration.lastUpdate
+  BrocaRegeneration.maxBroca
 }
