@@ -414,8 +414,8 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
       try {
         result = await networkClient.query(allPathsQuery, { 
           $userUid: user.uid,
-          $offset: offset,
-          $limit: pageSize
+          $offset: offset.toString(),
+          $limit: pageSize.toString()
         });
         
         const pagePaths = result.paths || [];
