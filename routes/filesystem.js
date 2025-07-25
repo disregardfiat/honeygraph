@@ -421,10 +421,17 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
         const pagePaths = result.paths || [];
         allPaths = allPaths.concat(pagePaths);
         
+        // Debug log to check if files are being returned
+        const pathsWithFiles = pagePaths.filter(p => p.files && p.files.length > 0);
         logger.info('Paths page query result', { 
           pagePathCount: pagePaths.length,
           totalPathCount: allPaths.length,
-          offset
+          offset,
+          pathsWithFiles: pathsWithFiles.length,
+          samplePath: pagePaths[0] ? {
+            fullPath: pagePaths[0].fullPath,
+            fileCount: pagePaths[0].files ? pagePaths[0].files.length : 0
+          } : null
         });
         
         // Check if we got a full page (meaning there might be more)
@@ -464,6 +471,11 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
       
       // Check if this path is the requested directory
       if (fullPath === normalizedPath) {
+        logger.debug('Found matching path for directory', {
+          fullPath,
+          hasFiles: !!files,
+          fileCount: files ? files.length : 0
+        });
         // Add files from this directory
         if (files && files.length > 0) {
           for (const file of files) {
