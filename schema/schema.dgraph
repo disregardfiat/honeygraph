@@ -65,3 +65,19 @@ type BrocaRegeneration {
   BrocaRegeneration.lastUpdate
   BrocaRegeneration.maxBroca
 }
+
+
+# Network Stats predicates
+statKey: string @index(term) .
+statCategory: string @index(term) .
+statValue: string .
+statBlockNumber: int @index(int) .
+
+# Network Stats type - for storing various network statistics
+type NetworkStats {
+  statKey
+  statCategory
+  statValue
+  blockNumber
+  timestamp
+}
