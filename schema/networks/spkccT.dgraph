@@ -138,65 +138,11 @@ type BrocaRegeneration {
   BrocaRegeneration.maxBroca
 }
 
-# Account type
-type Account {
-  username
-  avatar
-  description
-  reputation
-  publicKey
-  stakeMultiplier
-  balance
-  balances
-  staked
-  stakingPower
-  votingPower
-  contracts
-  contractsStoring
-  nodes
-  services
-  nodeMarketBid
-  encryptionKeys
-  successRate
-}
+# Account type is already defined in base schema
+# We only extend it with additional predicates above
 
-# StorageContract type
-type StorageContract {
-  id
-  purchaser
-  contractType
-  blockNumber
-  txid
-  authorized
-  broker
-  status
-  power
-  refunded
-  utilized
-  verified
-  files
-  fileCount
-  expiresBlock
-  expiresChronId
-  extensions
-  autoRenew
-  expires
-  fee
-  storageNodes
-  payouts
-  payoutCount
-  totalPayout
-  metadata
-  path
-  encryptionData
-  encryptionType
-  contentType
-  license
-  flagsNumeric
-  labelList
-  customFields
-  owner
-}
+# StorageContract type is already defined in base schema
+# We only extend it with additional predicates above
 
 # ContractFile type
 type ContractFile {
@@ -224,16 +170,5 @@ type Balance {
   account
 }
 
-# Path type
-type Path {
-  fullPath
-  pathName
-  pathType
-  parentPath
-  childPaths
-  itemCount
-  owner
-  files
-  lastModified
-  totalSize
-}
+# Path type is already defined in base schema
+# We only extend it with additional predicates above
