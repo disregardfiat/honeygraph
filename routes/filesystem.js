@@ -180,15 +180,33 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
     const spkNetwork = networkManager.getNetwork('spkccT_');
     const networkClient = spkNetwork ? spkNetwork.dgraphClient : dgraphClient;
     
-    // Query for files matching this path, ordered by block number (newest first)
+    // Split the path to get directory and filename
+    const pathParts = filePath.split('/');
+    const fileNameWithExt = pathParts.pop();
+    const parentPath = pathParts.join('/') || '/';
+    
+    // Split filename and extension
+    const lastDotIndex = fileNameWithExt.lastIndexOf('.');
+    let fileName, extension;
+    if (lastDotIndex > 0) {
+      fileName = fileNameWithExt.substring(0, lastDotIndex);
+      extension = fileNameWithExt.substring(lastDotIndex + 1);
+    } else {
+      fileName = fileNameWithExt;
+      extension = '';
+    }
+    
+    // Query for files matching name and path
     const query = `
-      query getFile($username: string, $filePath: string) {
-        files(func: eq(ContractFile.path, $filePath)) @cascade {
+      query getFile($username: string, $parentPath: string, $fileName: string) {
+        files(func: alloftext(ContractFile.name, $fileName)) @cascade {
           cid
           name
+          extension
           size
           mimeType
           flags
+          path
           contract @filter(eq(owner.username, $username) AND eq(status, 3)) {
             id
             blockNumber
@@ -203,68 +221,29 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
 
     const vars = { 
       $username: username,
-      $filePath: filePath
+      $parentPath: parentPath,
+      $fileName: fileName
     };
 
     const result = await networkClient.query(query, vars);
     let files = result.files || [];
+    
+    // Filter to only files in the correct directory and with matching extension
+    files = files.filter(file => {
+      const correctPath = file.path === parentPath;
+      const correctExtension = !extension || file.extension === extension;
+      return correctPath && correctExtension;
+    });
 
     // Filter out files with bitflag 2 (thumbnails/hidden files)
     files = files.filter(file => !((file.flags || 0) & 2));
     
     if (files.length === 0) {
-      // Try to find by name in the parent directory
-      const pathParts = filePath.split('/');
-      const fileName = pathParts.pop();
-      const parentPath = pathParts.join('/') || '/';
-
-      const nameQuery = `
-        query getFileByName($username: string, $parentPath: string, $fileName: string) {
-          files(func: alloftext(ContractFile.name, $fileName)) @cascade {
-            cid
-            name
-            size
-            mimeType
-            path
-            flags
-            contract @filter(
-              eq(owner.username, $username) 
-              AND eq(status, 3)
-              AND eq(path, $parentPath)
-            ) {
-              id
-              blockNumber
-              purchaser {
-                username
-              }
-              broker
-            }
-          }
-        }
-      `;
-
-      const nameTxn = networkClient.client.newTxn();
-      const nameResponse = await nameTxn.queryWithVars(nameQuery, {
-        $username: username,
-        $parentPath: parentPath,
-        $fileName: fileName
+      return res.status(404).json({ 
+        error: 'File not found',
+        path: filePath,
+        username 
       });
-      const nameResult = nameResponse.getJson();
-
-      let namedFiles = nameResult.files || [];
-      
-      // Filter out files with bitflag 2 (thumbnails/hidden files)
-      namedFiles = namedFiles.filter(file => !((file.flags || 0) & 2));
-      
-      if (namedFiles.length === 0) {
-        return res.status(404).json({ 
-          error: 'File not found',
-          path: filePath,
-          username 
-        });
-      }
-
-      files.push(...namedFiles);
     }
 
     // Sort by block number (newest first) for version control
@@ -298,7 +277,7 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
         });
       } else {
         // Final fallback to public IPFS gateway
-        const ipfsGateway = process.env.IPFS_GATEWAY || 'https://ipfs.io';
+        const ipfsGateway = process.env.IPFS_GATEWAY || 'https://ipfs.dlux.io';
         gatewayUrl = `${ipfsGateway}/ipfs/${newestFile.cid}`;
         
         res.set({
@@ -1043,7 +1022,7 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
           'X-Gateway-Priority': 'network-fallback'
         });
       } else {
-        const ipfsGateway = process.env.IPFS_GATEWAY || 'https://ipfs.io';
+        const ipfsGateway = process.env.IPFS_GATEWAY || 'https://ipfs.dlux.io';
         gatewayUrl = `${ipfsGateway}/ipfs/${foundFile.cid}`;
         res.set({ 'X-Gateway-Priority': 'public-fallback' });
       }
