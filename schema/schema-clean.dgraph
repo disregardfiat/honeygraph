@@ -1,4 +1,29 @@
-# Dgraph Schema for Honeygraph
+# Honeygraph Core Schema
+# This contains honeygraph-specific predicates and types
+# Account and multi-tenant predicates are in base-schema.dgraph
+
+# Path/File Management
+path: string @index(exact, term, fulltext) .
+parentPath: uid @reverse .
+isDirectory: bool @index(bool) .
+fileSize: int @index(int) .
+mimeType: string @index(term) .
+cid: string @index(exact) .
+uploadedAt: datetime @index(hour) .
+updatedAt: datetime @index(hour) .
+owner: uid @reverse .
+
+# Storage Contract Management
+contractId: string @index(exact) .
+escrow: string .
+jobCost: string .
+fileCost: string .
+fileCount: int .
+status: string @index(term) .
+serviceProvider: uid @reverse .
+challengeResponse: string .
+challengeBlock: int .
+auditResults: [uid] @reverse .
 
 # Block type
 blockNum: int @index(int) .
@@ -64,9 +89,39 @@ peer.syncStatus: string @index(term) .
 statKey: string @index(term) .
 statCategory: string @index(term) .
 statValue: string .
-# Note: blockNum and timestamp already defined above
+
+# Account extension for honeygraph
+username: string @index(exact, term) .
 
 # Type definitions
+type Path {
+  path
+  owner
+  parentPath
+  isDirectory
+  fileSize
+  mimeType
+  cid
+  uploadedAt
+  updatedAt
+}
+
+type StorageContract {
+  contractId
+  owner
+  escrow
+  jobCost
+  fileCost
+  fileCount
+  status
+  serviceProvider
+  challengeResponse
+  challengeBlock
+  auditResults
+  blockNum
+  timestamp
+}
+
 type Block {
   blockNum
   blockHash
@@ -141,4 +196,9 @@ type NetworkStats {
   statValue
   blockNum
   timestamp
+}
+
+# Account type extension
+type Account {
+  username
 }

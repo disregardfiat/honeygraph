@@ -1,0 +1,58 @@
+# Honeygraph Core Schema
+# This contains only honeygraph-specific predicates
+# Multi-tenant and network-specific predicates are in other files
+
+# Account Management (extends base Account type)
+username: string @index(exact, term) .
+owner: uid @reverse .
+
+# Path/File Management
+path: string @index(exact, term, fulltext) .
+parentPath: uid @reverse .
+isDirectory: bool @index(bool) .
+fileSize: int @index(int) .
+mimeType: string @index(term) .
+cid: string @index(exact) .
+uploadedAt: datetime @index(hour) .
+updatedAt: datetime @index(hour) .
+
+# Storage Contract Management
+contractId: string @index(exact) .
+escrow: string .
+jobCost: string .
+fileCost: string .
+fileCount: int .
+status: string @index(term) .
+serviceProvider: uid @reverse .
+challengeResponse: string .
+challengeBlock: int .
+auditResults: [uid] @reverse .
+
+# Types
+type Path {
+  path
+  owner
+  parentPath
+  isDirectory
+  fileSize
+  mimeType
+  cid
+  uploadedAt
+  updatedAt
+}
+
+type StorageContract {
+  contractId
+  owner
+  escrow
+  jobCost
+  fileCost
+  fileCount
+  status
+  serviceProvider
+  challengeResponse
+  challengeBlock
+  auditResults
+  blockNum
+  timestamp
+}

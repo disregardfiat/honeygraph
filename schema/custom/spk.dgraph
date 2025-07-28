@@ -1,53 +1,8 @@
 # SPK Token Custom Schema Extensions
+# Note: This file is for generic SPK-related types that might be shared
+# Network-specific SPK predicates should go in networks/spkccT.dgraph
 
-# SPK-specific predicates
-SPKValidator.account: string @index(hash) .
-SPKValidator.pubKey: string @index(hash) .
-SPKValidator.signingKey: string .
-SPKValidator.encryptionKey: string .
-SPKValidator.stake: string .
-SPKValidator.rewards: string .
-SPKValidator.lastBlock: int .
-SPKValidator.missedBlocks: int .
-SPKValidator.totalBlocks: int .
-
-SPKStorageContract.id: string @index(hash) .
-SPKStorageContract.creator: string @index(hash) .
-SPKStorageContract.fileSet: string @index(hash) .
-SPKStorageContract.totalSize: int .
-SPKStorageContract.duration: int .
-SPKStorageContract.powerRequired: string .
-SPKStorageContract.brocaPaid: string .
-SPKStorageContract.status: string @index(hash) .
-SPKStorageContract.providers: [uid] .
-SPKStorageContract.expiry: datetime @index(hour) .
-
-SPKBrocaBalance.account: string @index(hash) .
-SPKBrocaBalance.balance: string .
-SPKBrocaBalance.powerUp: string .
-SPKBrocaBalance.powerDown: string .
-SPKBrocaBalance.lastUpdate: datetime .
-
-SPKEncryptedFile.cid: string @index(hash) .
-SPKEncryptedFile.owner: string @index(hash) .
-SPKEncryptedFile.size: int .
-SPKEncryptedFile.encryptionType: string .
-SPKEncryptedFile.sharedWith: [string] .
-SPKEncryptedFile.created: datetime .
-
-# SPK-specific types
-type SPKValidator {
-  SPKValidator.account
-  SPKValidator.pubKey
-  SPKValidator.signingKey
-  SPKValidator.encryptionKey
-  SPKValidator.stake
-  SPKValidator.rewards
-  SPKValidator.lastBlock
-  SPKValidator.missedBlocks
-  SPKValidator.totalBlocks
-}
-
+# Generic SPK Storage Contract type that could be used by multiple networks
 type SPKStorageContract {
   SPKStorageContract.id
   SPKStorageContract.creator
@@ -61,14 +16,7 @@ type SPKStorageContract {
   SPKStorageContract.expiry
 }
 
-type SPKBrocaBalance {
-  SPKBrocaBalance.account
-  SPKBrocaBalance.balance
-  SPKBrocaBalance.powerUp
-  SPKBrocaBalance.powerDown
-  SPKBrocaBalance.lastUpdate
-}
-
+# Generic Encrypted File type
 type SPKEncryptedFile {
   SPKEncryptedFile.cid
   SPKEncryptedFile.owner
@@ -77,3 +25,22 @@ type SPKEncryptedFile {
   SPKEncryptedFile.sharedWith
   SPKEncryptedFile.created
 }
+
+# Predicates for generic SPK types
+SPKStorageContract.id: string @index(hash) .
+SPKStorageContract.creator: string @index(hash) .
+SPKStorageContract.fileSet: string @index(hash) .
+SPKStorageContract.totalSize: int .
+SPKStorageContract.duration: int .
+SPKStorageContract.powerRequired: string .
+SPKStorageContract.brocaPaid: string .
+SPKStorageContract.status: string @index(hash) .
+SPKStorageContract.providers: [uid] .
+SPKStorageContract.expiry: datetime @index(hour) .
+
+SPKEncryptedFile.cid: string @index(hash) .
+SPKEncryptedFile.owner: string @index(hash) .
+SPKEncryptedFile.size: int .
+SPKEncryptedFile.encryptionType: string .
+SPKEncryptedFile.sharedWith: [string] .
+SPKEncryptedFile.created: datetime .
