@@ -71,6 +71,9 @@ curl http://localhost:3030/fs/disregardfiat/
 # Test a specific directory - should show actual files
 curl http://localhost:3030/fs/disregardfiat/Ragnarok/
 
+# Test file Redirects
+curl http://localhost:3030/fs/disregardfiat/NFTs/hf.txt
+
 # Test SPK user API (confirms all data imported)
 curl http://localhost:3030/api/spk/user/disregardfiat
 
@@ -129,6 +132,7 @@ docker compose up --build honeygraph-api
 - `GET /fs/:username/` - Browse user's virtual file system
 - `GET /fs/:username/path/to/folder/` - Browse specific directory
 - `GET /fs/:username/path/to/file.ext` - Redirect to IPFS file
+   - Files with out extensions must have a trailing . ~/file.
 - `GET /fse/:username/` - Files shared with user (encrypted)
 - `GET /fss/:username/` - Files shared by user
 
