@@ -1,0 +1,249 @@
+version: '3.8'
+
+services:
+  # DGraph Zero - Coordinator
+  dgraph-zero:
+    image: dgraph/dgraph:v23.0.0
+    container_name: honeygraph-zero
+    volumes:
+      - ./data/zero:/dgraph
+    command: dgraph zero --my=dgraph-zero:5080 --replicas 3
+    ports:
+      - "5080:5080"
+      - "6080:6080"
+    restart: unless-stopped
+    networks:
+      - honeygraph
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # DGraph Alpha 1 - Primary
+  dgraph-alpha1:
+    image: dgraph/dgraph:v23.0.0
+    container_name: honeygraph-alpha1
+    volumes:
+      - ./data/alpha1:/dgraph
+      - ./schema:/schema
+    ports:
+      - "8080:8080"
+      - "9080:9080"
+    command: dgraph alpha --my=dgraph-alpha1:7080 --zero=dgraph-zero:5080 --security whitelist=0.0.0.0/0
+    restart: unless-stopped
+    depends_on:
+      dgraph-zero:
+        condition: service_healthy
+    networks:
+      - honeygraph
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # DGraph Alpha 2 - Replica
+  dgraph-alpha2:
+    image: dgraph/dgraph:v23.0.0
+    container_name: honeygraph-alpha2
+    volumes:
+      - ./data/alpha2:/dgraph
+      - ./schema:/schema
+    ports:
+      - "8081:8080"
+      - "9081:9080"
+    command: dgraph alpha --my=dgraph-alpha2:7081 --zero=dgraph-zero:5080 --security whitelist=0.0.0.0/0
+    restart: unless-stopped
+    depends_on:
+      dgraph-zero:
+        condition: service_healthy
+    networks:
+      - honeygraph
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # DGraph Alpha 3 - Replica
+  dgraph-alpha3:
+    image: dgraph/dgraph:v23.0.0
+    container_name: honeygraph-alpha3
+    volumes:
+      - ./data/alpha3:/dgraph
+      - ./schema:/schema
+    ports:
+      - "8082:8080"
+      - "9082:9080"
+    command: dgraph alpha --my=dgraph-alpha3:7082 --zero=dgraph-zero:5080 --security whitelist=0.0.0.0/0
+    restart: unless-stopped
+    depends_on:
+      dgraph-zero:
+        condition: service_healthy
+    networks:
+      - honeygraph
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Ratel UI
+  dgraph-ratel:
+    image: dgraph/ratel:latest
+    container_name: honeygraph-ratel
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    networks:
+      - honeygraph
+
+  # Redis for queue management
+  redis:
+    image: redis:7-alpine
+    container_name: honeygraph-redis
+    expose:
+      - "6379"
+    volumes:
+      - ./data/redis:/data
+    command: redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+    networks:
+      - honeygraph
+
+  # HAProxy Load Balancer for DGraph
+  haproxy:
+    image: haproxy:2.8-alpine
+    container_name: honeygraph-haproxy
+    volumes:
+      - ./config/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    ports:
+      - "8090:8080"  # HTTP API
+      - "9090:9080"  # gRPC
+      - "8404:8404"  # Stats
+    depends_on:
+      - dgraph-alpha1
+      - dgraph-alpha2
+      - dgraph-alpha3
+    networks:
+      - honeygraph
+    restart: unless-stopped
+
+  # Honeygraph API Server 1
+  honeygraph-api1:
+    build: .
+    container_name: honeygraph-api1
+    ports:
+      - "3030:3030"
+    environment:
+      - NODE_ENV=production
+      - DGRAPH_URL=http://haproxy:9080
+      - API_PORT=3030
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REQUIRE_HIVE_AUTH=true
+      - AUTHORIZED_HONEYCOMB_NODES=${AUTHORIZED_NODES:-testnode1,spknode,honeycomb-test}
+      - DOCKER_ENV=true
+      - DATA_PATH=/app/data/honeygraph
+      - ZFS_CHECKPOINTS_ENABLED=${ZFS_ENABLED:-false}
+      - ZFS_DATASET=${ZFS_DATASET:-honeygraph/checkpoints}
+      - INSTANCE_ID=api1
+    volumes:
+      - ./logs/api1:/app/logs
+      - ./data/honeygraph:/app/data/honeygraph
+      - ./schema:/app/schema
+    depends_on:
+      haproxy:
+        condition: service_started
+      redis:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - honeygraph
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3030/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    command: >
+      sh -c "
+        echo 'Waiting for DGraph cluster to be ready...' &&
+        until curl -f http://haproxy:8080/health 2>/dev/null; do
+          echo 'DGraph not ready, waiting 5 seconds...' &&
+          sleep 5
+        done &&
+        echo 'DGraph cluster is ready!' &&
+        echo 'Initializing schema...' &&
+        DGRAPH_URL=http://haproxy:9080 node /app/scripts/init-schema.js &&
+        echo 'Starting API server...' &&
+        npm start
+      "
+
+  # Honeygraph API Server 2
+  honeygraph-api2:
+    build: .
+    container_name: honeygraph-api2
+    ports:
+      - "3031:3030"
+    environment:
+      - NODE_ENV=production
+      - DGRAPH_URL=http://haproxy:9080
+      - API_PORT=3030
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REQUIRE_HIVE_AUTH=true
+      - AUTHORIZED_HONEYCOMB_NODES=${AUTHORIZED_NODES:-testnode1,spknode,honeycomb-test}
+      - DOCKER_ENV=true
+      - DATA_PATH=/app/data/honeygraph
+      - ZFS_CHECKPOINTS_ENABLED=${ZFS_ENABLED:-false}
+      - INSTANCE_ID=api2
+    volumes:
+      - ./logs/api2:/app/logs
+      - ./data/honeygraph:/app/data/honeygraph
+      - ./schema:/app/schema
+    depends_on:
+      honeygraph-api1:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - honeygraph
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3030/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    command: npm start
+
+  # NGINX Load Balancer for API servers
+  nginx:
+    image: nginx:alpine
+    container_name: honeygraph-nginx
+    volumes:
+      - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - honeygraph-api1
+      - honeygraph-api2
+    networks:
+      - honeygraph
+    restart: unless-stopped
+
+networks:
+  honeygraph:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  dgraph-zero:
+  dgraph-alpha1:
+  dgraph-alpha2:
+  dgraph-alpha3:
+  redis-data:
+  honeygraph-data:

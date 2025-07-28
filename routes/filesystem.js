@@ -336,16 +336,20 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
     });
     
     // First get the user UID to ensure we can query with it
+    // IMPORTANT: Accounts are global, not network-specific
     const userQuery = `
       query getUser($username: string) {
-        user(func: eq(username, $username), first: 1) {
+        user(func: eq(username, $username)) @filter(type(Account)) {
           uid
           username
         }
       }
     `;
     
-    const userResult = await networkClient.query(userQuery, { $username: username });
+    // Use global query for accounts - they exist across all networks
+    const userResult = await (networkClient.queryGlobal ? 
+      networkClient.queryGlobal(userQuery, { $username: username }) :
+      networkClient.query(userQuery, { $username: username }));
     const user = userResult.user?.[0];
     
     if (!user) {

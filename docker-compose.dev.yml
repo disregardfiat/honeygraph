@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  honeygraph-api:
+    image: node:18
+    container_name: honeygraph-api
+    working_dir: /app
+    ports:
+      - "3030:3030"
+    environment:
+      - NODE_ENV=development
+      - DGRAPH_URL=http://dgraph-alpha:9080
+      - API_PORT=3030
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REQUIRE_HIVE_AUTH=false
+      - AUTHORIZED_HONEYCOMB_NODES=testnode1,spknode,honeycomb-test
+      - DOCKER_ENV=true
+      - DATA_PATH=/app/data/honeygraph
+      - ZFS_CHECKPOINTS_ENABLED=false
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      dgraph-alpha:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - honeygraph
+    command: >
+      sh -c "
+        cd /app &&
+        npm install &&
+        echo 'Waiting for Dgraph to be ready...' &&
+        until curl -f http://dgraph-alpha:8080/health 2>/dev/null; do
+          echo 'Dgraph not ready, waiting 5 seconds...' &&
+          sleep 5
+        done &&
+        echo 'Dgraph is ready!' &&
+        echo 'Initializing schema...' &&
+        node scripts/init-schema.js &&
+        echo 'Starting API server...' &&
+        npm start
+      "

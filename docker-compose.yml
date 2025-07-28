@@ -64,11 +64,10 @@ services:
       - NODE_ENV=production
       - DGRAPH_URL=http://dgraph-alpha:9080
       - API_PORT=3030
-      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REQUIRE_HIVE_AUTH=true
-      - AUTHORIZED_HONEYCOMB_NODES=testnode1,spknode,honeycomb-test
+      - AUTHORIZED_HONEYCOMB_NODES=spk-test,spk-test2
     volumes:
       - ./logs:/app/logs
     depends_on:

@@ -1,0 +1,258 @@
+# Base Schema for Multi-Tenant Honeygraph
+# This schema supports multiple blockchain networks with proper isolation
+
+# Network Management
+network.prefix: string @index(exact) .
+network.name: string @index(term) .
+network.description: string .
+network.createdAt: datetime @index(hour) .
+network.updatedAt: datetime .
+network.isActive: bool @index(bool) .
+network.chainId: string @index(exact) .
+network.genesisBlock: int .
+network.currentBlock: int @index(int) .
+
+type Network {
+  network.prefix
+  network.name
+  network.description
+  network.createdAt
+  network.updatedAt
+  network.isActive
+  network.chainId
+  network.genesisBlock
+  network.currentBlock
+}
+
+# Account Management (shared across networks)
+account.name: string @index(exact, term) .
+account.address: string @index(exact) .
+account.publicKey: string @index(exact) .
+account.createdAt: datetime @index(hour) .
+account.updatedAt: datetime .
+account.networks: [uid] @reverse .
+account.isContract: bool @index(bool) .
+account.metadata: string .
+
+type Account {
+  account.name
+  account.address
+  account.publicKey
+  account.createdAt
+  account.updatedAt
+  account.networks
+  account.isContract
+  account.metadata
+}
+
+# Network Account Association
+networkAccount.network: uid @reverse .
+networkAccount.account: uid @reverse .
+networkAccount.firstSeen: datetime @index(hour) .
+networkAccount.lastActive: datetime @index(hour) .
+networkAccount.transactionCount: int @index(int) .
+
+type NetworkAccount {
+  networkAccount.network
+  networkAccount.account
+  networkAccount.firstSeen
+  networkAccount.lastActive
+  networkAccount.transactionCount
+}
+
+# Balance Management (per network)
+balance.networkAccount: uid @reverse .
+balance.token: uid @reverse .
+balance.amount: string @index(exact) .
+balance.blockNum: int @index(int) .
+balance.timestamp: datetime @index(hour) .
+
+type Balance {
+  balance.networkAccount
+  balance.token
+  balance.amount
+  balance.blockNum
+  balance.timestamp
+}
+
+# Token Management
+token.symbol: string @index(exact) .
+token.name: string @index(term) .
+token.network: uid @reverse .
+token.precision: int .
+token.maxSupply: string .
+token.currentSupply: string @index(exact) .
+token.issuer: uid .
+token.createdAt: datetime @index(hour) .
+token.metadata: string .
+
+type Token {
+  token.symbol
+  token.name
+  token.network
+  token.precision
+  token.maxSupply
+  token.currentSupply
+  token.issuer
+  token.createdAt
+  token.metadata
+}
+
+# Transaction/Operation Management
+operation.network: uid @reverse .
+operation.blockNum: int @index(int) .
+operation.index: int @index(int) .
+operation.type: string @index(exact, term) .
+operation.timestamp: datetime @index(hour) .
+operation.from: uid @reverse .
+operation.to: uid @reverse .
+operation.token: uid @reverse .
+operation.amount: string .
+operation.memo: string @index(fulltext) .
+operation.hash: string @index(exact) .
+operation.status: string @index(exact) .
+operation.metadata: string .
+operation.checkpointHash: string @index(exact) .
+
+type Operation {
+  operation.network
+  operation.blockNum
+  operation.index
+  operation.type
+  operation.timestamp
+  operation.from
+  operation.to
+  operation.token
+  operation.amount
+  operation.memo
+  operation.hash
+  operation.status
+  operation.metadata
+  operation.checkpointHash
+}
+
+# Fork Management
+fork.id: string @index(exact) .
+fork.network: uid @reverse .
+fork.parentFork: string @index(exact) .
+fork.branchBlock: int @index(int) .
+fork.tipBlock: int @index(int) .
+fork.consensusScore: float @index(float) .
+fork.isActive: bool @index(bool) .
+fork.createdAt: datetime @index(hour) .
+fork.lastCheckpoint: string @index(exact) .
+
+type Fork {
+  fork.id
+  fork.network
+  fork.parentFork
+  fork.branchBlock
+  fork.tipBlock
+  fork.consensusScore
+  fork.isActive
+  fork.createdAt
+  fork.lastCheckpoint
+}
+
+# Block Management
+block.network: uid @reverse .
+block.number: int @index(int) .
+block.hash: string @index(exact) .
+block.previousHash: string @index(exact) .
+block.timestamp: datetime @index(hour) .
+block.producer: uid @reverse .
+block.transactionCount: int .
+block.operationCount: int .
+block.fork: uid @reverse .
+block.isIrreversible: bool @index(bool) .
+
+type Block {
+  block.network
+  block.number
+  block.hash
+  block.previousHash
+  block.timestamp
+  block.producer
+  block.transactionCount
+  block.operationCount
+  block.fork
+  block.isIrreversible
+}
+
+# Checkpoint Management
+checkpoint.network: uid @reverse .
+checkpoint.blockNum: int @index(int) .
+checkpoint.blockHash: string @index(exact) .
+checkpoint.stateHash: string @index(exact) .
+checkpoint.timestamp: datetime @index(hour) .
+checkpoint.fork: uid @reverse .
+checkpoint.zfsSnapshot: string .
+
+type Checkpoint {
+  checkpoint.network
+  checkpoint.blockNum
+  checkpoint.blockHash
+  checkpoint.stateHash
+  checkpoint.timestamp
+  checkpoint.fork
+  checkpoint.zfsSnapshot
+}
+
+# Contract Storage (per network)
+contract.network: uid @reverse .
+contract.account: uid @reverse .
+contract.code: string .
+contract.abi: string .
+contract.deployedAt: datetime @index(hour) .
+contract.lastUpdated: datetime @index(hour) .
+contract.isActive: bool @index(bool) .
+
+type Contract {
+  contract.network
+  contract.account
+  contract.code
+  contract.abi
+  contract.deployedAt
+  contract.lastUpdated
+  contract.isActive
+}
+
+# State Storage (key-value per network)
+state.network: uid @reverse .
+state.contract: uid @reverse .
+state.key: string @index(exact, term) .
+state.value: string .
+state.blockNum: int @index(int) .
+state.timestamp: datetime @index(hour) .
+
+type State {
+  state.network
+  state.contract
+  state.key
+  state.value
+  state.blockNum
+  state.timestamp
+}
+
+# Network Statistics
+stat.network: uid @reverse .
+stat.key: string @index(exact, term) .
+stat.category: string @index(exact) .
+stat.value: string .
+stat.blockNum: int @index(int) .
+stat.timestamp: datetime @index(hour) .
+
+type NetworkStats {
+  stat.network
+  stat.key
+  stat.category
+  stat.value
+  stat.blockNum
+  stat.timestamp
+}
+
+# Indexes for efficient queries
+# Composite indexes for common query patterns
+operation.networkBlock: string @index(exact) .  # network_prefix + block_num
+operation.networkAccount: string @index(exact) . # network_prefix + account
+balance.networkToken: string @index(exact) .     # network_prefix + token_symbol
