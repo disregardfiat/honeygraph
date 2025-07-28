@@ -1,8 +1,8 @@
 # SPK Test Network Schema Extensions
 # This schema is applied in addition to the base schema for the spkccT_ network
+# NOTE: Only includes predicates NOT in base schema to avoid conflicts
 
-# Account predicates
-username: string @index(exact, term) @upsert .
+# Additional Account predicates not in base schema
 avatar: string .
 description: string .
 reputation: int @index(int) .
@@ -21,7 +21,7 @@ nodeMarketBid: uid .
 encryptionKeys: uid @reverse .
 successRate: float @index(float) .
 
-# StorageContract predicates
+# StorageContract predicates (only those not in base)
 id: string @index(exact) @upsert .
 purchaser: uid @reverse .
 contractType: int @index(int) .
@@ -29,13 +29,13 @@ blockNumber: int @index(int) .
 txid: string @index(hash) .
 authorized: int @index(int) .
 broker: string @index(term) .
-status: int @index(int) .
+# status: conflicts with base schema (string vs int)
 power: int @index(int) .
 refunded: int @index(int) .
 utilized: int @index(int) .
 verified: int @index(int) .
 files: uid @reverse .
-fileCount: int @index(int) .
+# fileCount: conflicts with base schema (no index vs index)
 expiresBlock: int @index(int) .
 expiresChronId: string .
 extensions: uid @reverse .
@@ -47,7 +47,6 @@ payouts: uid @reverse .
 payoutCount: int @index(int) .
 totalPayout: int @index(int) .
 metadata: uid .
-path: string @index(term) .
 encryptionData: string .
 encryptionType: string @index(term) .
 contentType: string @index(term) .
@@ -55,17 +54,13 @@ license: string .
 flagsNumeric: int .
 labelList: [string] .
 customFields: string .
-owner: uid @reverse .
 
-# ContractFile predicates
-cid: string @index(hash) @upsert .
-path: string @index(term, trigram) .
+# ContractFile predicates (only those not in base)
+# cid, path, mimeType already in base
 name: string @index(term, fulltext) .
 extension: string @index(term) .
 size: int @index(int) .
 encoding: string .
-mimeType: string @index(term) .
-license: string .
 labels: string .
 thumbnail: string .
 flags: int .
@@ -74,20 +69,18 @@ contract: uid @reverse .
 # Balance predicates
 token: string @index(exact) .
 amount: int @index(int) .
-staked: int @index(int) .
 delegated: int @index(int) .
 liquid: int @index(int) .
 account: uid @reverse .
 
-# Path predicates
+# Path predicates (only those not in base)
 fullPath: string @index(exact, trigram) @upsert .
 pathName: string @index(term) .
 pathType: string @index(exact) .
-parentPath: uid @reverse .
+# parentPath already in base
 childPaths: uid .
 itemCount: int @index(int) .
-owner: uid @reverse .
-files: uid .
+# owner already in base
 lastModified: int @index(int) .
 totalSize: int @index(int) .
 

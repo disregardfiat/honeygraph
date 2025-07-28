@@ -1,0 +1,25 @@
+# SPK Test Network Schema Extensions - MINIMAL
+# Only the absolute minimum predicates needed for Path functionality
+
+# Path predicates missing from base
+fullPath: string @index(exact, trigram) @upsert .
+pathName: string @index(term) .
+pathType: string @index(exact) .
+childPaths: uid .
+itemCount: int @index(int) .
+lastModified: int @index(int) .
+totalSize: int @index(int) .
+
+# Path type
+type Path {
+  fullPath
+  pathName
+  pathType
+  parentPath
+  childPaths
+  itemCount
+  owner
+  files
+  lastModified
+  totalSize
+}
