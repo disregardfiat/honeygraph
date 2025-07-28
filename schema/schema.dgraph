@@ -90,6 +90,7 @@ serviceProvider: uid @reverse .
 challengeResponse: string .
 challengeBlock: int .
 auditResults: [uid] @reverse .
+status: string @index(hash) .
 
 # Type definitions
 type Block {

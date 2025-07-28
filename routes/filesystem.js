@@ -52,6 +52,8 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
     const { username } = req.params;
     const requestPath = req.params[0] || '/';
     
+    logger.info('=== FILESYSTEM ROUTE HIT ===', { username, requestPath, url: req.url });
+    
     try {
       logger.info('Filesystem request', { username, path: requestPath });
 
@@ -63,11 +65,20 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
       const possibleFileName = pathParts[pathParts.length - 1];
       const hasExtension = possibleFileName && possibleFileName.includes('.');
       
+      logger.info('Request type detection', {
+        normalizedPath,
+        pathParts,
+        possibleFileName,
+        hasExtension
+      });
+      
       if (hasExtension) {
         // This looks like a file request
+        logger.info('Detected as file request, calling handleFileRequest');
         await handleFileRequest(dgraphClient, username, normalizedPath, res);
       } else {
         // This is a directory request
+        logger.info('Detected as directory request, calling handleDirectoryRequest');
         await handleDirectoryRequest(dgraphClient, username, normalizedPath, res);
       }
     } catch (error) {
@@ -77,7 +88,12 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
         username: username,
         path: requestPath
       });
-      res.status(500).json({ error: 'Internal server error' });
+      // Return a more detailed error for debugging
+      res.status(500).json({ 
+        error: 'Internal server error',
+        message: error.message,
+        path: requestPath
+      });
     }
   });
 
@@ -176,9 +192,16 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
    * Handle file requests - redirect to IPFS with version control
    */
   async function handleFileRequest(dgraphClient, username, filePath, res) {
+    logger.info('handleFileRequest called', { username, filePath });
+    
     // Get the correct network client (SPK network data is in spkccT_ namespace)
     const spkNetwork = networkManager.getNetwork('spkccT_');
     const networkClient = spkNetwork ? spkNetwork.dgraphClient : dgraphClient;
+    
+    logger.info('Using network client', { 
+      hasSpkNetwork: !!spkNetwork,
+      namespace: networkClient.namespace || 'default'
+    });
     
     // Split the path to get directory and filename
     const pathParts = filePath.split('/');
@@ -196,24 +219,38 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
       extension = '';
     }
     
-    // Query for files matching name and path
+    // Query for files matching name and path through Path entities
     const query = `
       query getFile($username: string, $parentPath: string, $fileName: string) {
-        files(func: alloftext(ContractFile.name, $fileName)) @cascade {
-          cid
-          name
-          extension
-          size
-          mimeType
-          flags
-          path
-          contract @filter(eq(owner.username, $username) AND eq(status, 3)) {
-            id
-            blockNumber
-            purchaser {
-              username
+        paths(func: type(Path)) @filter(eq(fullPath, $parentPath) AND has(owner)) @cascade {
+          fullPath
+          owner @filter(eq(username, $username)) {
+            username
+          }
+          files @filter(eq(name, $fileName)) {
+            uid
+            cid
+            name
+            extension
+            size
+            mimeType
+            flags
+            license
+            labels
+            thumbnail
+            contract {
+              id
+              blockNumber
+              purchaser {
+                username
+              }
+              broker
+              storageNodes {
+                storageAccount {
+                  username
+                }
+              }
             }
-            broker
           }
         }
       }
@@ -226,14 +263,28 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
     };
 
     const result = await networkClient.query(query, vars);
-    let files = result.files || [];
+    const paths = result.paths || [];
     
-    // Filter to only files in the correct directory and with matching extension
-    files = files.filter(file => {
-      const correctPath = file.path === parentPath;
-      const correctExtension = !extension || file.extension === extension;
-      return correctPath && correctExtension;
+    // Extract files from the path result
+    let files = [];
+    if (paths.length > 0 && paths[0].files) {
+      files = paths[0].files;
+    }
+    
+    logger.info('File query result', {
+      username,
+      parentPath,
+      fileName,
+      extension,
+      pathsFound: paths.length,
+      resultCount: files.length,
+      files: files.map(f => ({ name: f.name, extension: f.extension, cid: f.cid }))
     });
+    
+    // Filter by extension if specified
+    if (extension) {
+      files = files.filter(file => file.extension === extension);
+    }
 
     // Filter out files with bitflag 2 (thumbnails/hidden files)
     files = files.filter(file => !((file.flags || 0) & 2));

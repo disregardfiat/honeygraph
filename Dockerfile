@@ -1,7 +1,7 @@
 FROM node:18-slim
 
 # Install build dependencies and curl for health checks
-RUN apt-get update && apt-get install -y --fix-missing python3 make g++ curl && rm -rf /var/lib/apt/lists/*
+RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update && apt-get install -y python3 make g++ curl && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user early in the build
 RUN groupadd -g 1001 nodejs && \
