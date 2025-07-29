@@ -9,6 +9,7 @@ import { createNetworkManager } from '../lib/network-manager.js';
 import { createDataTransformer } from '../lib/data-transformer.js';
 import { createLogger } from '../lib/logger.js';
 import { DgraphClient } from '../lib/dgraph-client.js';
+import { pathAccumulator } from '../lib/path-accumulator.js';
 import dgraph from 'dgraph-js';
 import ora from 'ora';
 import chalk from 'chalk';
@@ -95,6 +96,9 @@ async function main() {
     spinner = ora('Transforming and importing data...').start();
     const transformer = createDataTransformer(dgraphClient, networkManager);
     
+    // Start batch mode for path accumulator
+    pathAccumulator.startBatch();
+    
     // Process different state paths
     const statePaths = [
       "authorities",
@@ -140,34 +144,53 @@ async function main() {
       if (stateData.state[pathKey]) {
         let operations;
         
-        // Special handling for contracts - process by user to maintain consistency
+        // Special handling for contracts - collect ALL contracts first
         if (pathKey === 'contract') {
-          console.log(chalk.yellow(`\nProcessing contracts by user for better consistency...`));
-          let contractsProcessed = 0;
-          let contractsErrors = 0;
-          let usersProcessed = 0;
+          console.log(chalk.yellow(`\nProcessing contracts with proper file accumulation...`));
+          
+          // First, collect ALL contracts and group by file owner (.t field)
+          const contractsByFileOwner = new Map();
+          let totalContracts = 0;
           
           for (const [username, userContracts] of Object.entries(stateData.state[pathKey])) {
-            try {
-              // Collect all contracts for this user
-              const userOperations = [];
-              for (const [contractId, contractData] of Object.entries(userContracts)) {
-                userOperations.push({
-                  type: 'put',
-                  path: ['contract', username, contractId],
-                  data: contractData,
-                  blockNum: stateData.state.stats?.block_num || 0,
-                  timestamp: Date.now()
-                });
+            for (const [contractId, contractData] of Object.entries(userContracts)) {
+              totalContracts++;
+              
+              // Group by file owner (the .t field)
+              const fileOwner = contractData.t || username;
+              if (!contractsByFileOwner.has(fileOwner)) {
+                contractsByFileOwner.set(fileOwner, []);
               }
               
-              // Process all user contracts together
+              contractsByFileOwner.get(fileOwner).push({
+                type: 'put',
+                path: ['contract', username, contractId],
+                data: contractData,
+                blockNum: stateData.state.stats?.block_num || 0,
+                timestamp: Date.now()
+              });
+            }
+          }
+          
+          console.log(chalk.yellow(`Found ${totalContracts} contracts for ${contractsByFileOwner.size} file owners`));
+          
+          // Now process contracts grouped by file owner
+          let contractsProcessed = 0;
+          let contractsErrors = 0;
+          let ownersProcessed = 0;
+          
+          for (const [fileOwner, ownerOperations] of contractsByFileOwner) {
+            try {
+              console.log(chalk.gray(`Processing ${ownerOperations.length} contracts for ${fileOwner}...`));
+              
+              // Process all contracts for this file owner together
+              // This ensures all files for the same paths are accumulated properly
               const blockInfo = {
                 blockNum: stateData.state.stats?.block_num || 0,
                 timestamp: Date.now()
               };
               
-              const mutations = await transformer.transformOperations(userOperations, blockInfo);
+              const mutations = await transformer.transformOperations(ownerOperations, blockInfo);
               
               if (mutations.length > 0) {
                 const txn = dgraphClient.client.newTxn();
@@ -176,22 +199,22 @@ async function main() {
                   mu.setSetJson(mutations);
                   await txn.mutate(mu);
                   await txn.commit();
-                  contractsProcessed += userOperations.length;
-                  usersProcessed++;
+                  contractsProcessed += ownerOperations.length;
+                  ownersProcessed++;
                 } catch (error) {
-                  console.log(chalk.red(`User ${username} contracts import error: ${error.message}`));
-                  contractsErrors += userOperations.length;
+                  console.log(chalk.red(`File owner ${fileOwner} contracts import error: ${error.message}`));
+                  contractsErrors += ownerOperations.length;
                 } finally {
                   await txn.discard();
                 }
               }
             } catch (error) {
-              console.log(chalk.red(`User ${username} contracts transform error: ${error.message}`));
-              contractsErrors += Object.keys(userContracts).length;
+              console.log(chalk.red(`File owner ${fileOwner} contracts transform error: ${error.message}`));
+              contractsErrors += ownerOperations.length;
             }
           }
           
-          console.log(chalk.green(`✨ Processed ${contractsProcessed} contracts from ${usersProcessed} users!`));
+          console.log(chalk.green(`✨ Processed ${contractsProcessed} contracts from ${ownersProcessed} file owners!`));
           if (contractsErrors > 0) {
             console.log(chalk.yellow(`⚠️  ${contractsErrors} contracts failed`));
           }
@@ -242,6 +265,17 @@ async function main() {
     }
     
     spinner.succeed(`Data imported: ${totalOperations} operations, ${totalMutations} mutations`);
+    
+    // End batch mode and show path accumulator stats
+    pathAccumulator.endBatch();
+    const accumulatorStats = pathAccumulator.getStats();
+    console.log(chalk.yellow('\nPath Accumulator Stats:'));
+    console.log(`  Total Paths: ${accumulatorStats.totalPaths}`);
+    console.log(`  Total Files: ${accumulatorStats.totalFiles}`);
+    console.log(`  Paths with Multiple Files: ${accumulatorStats.pathsWithMultipleFiles}`);
+    if (accumulatorStats.largestPath.fileCount > 0) {
+      console.log(`  Largest Path: ${accumulatorStats.largestPath.path} (${accumulatorStats.largestPath.fileCount} files)`);
+    }
     
     // Step 6: Verify import
     spinner = ora('Verifying import...').start();

@@ -219,15 +219,16 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
       extension = '';
     }
     
-    // Query for files matching name and path through Path entities
+    // Query for files matching name with or without extension
+    // First try exact match, then try without extension
     const query = `
-      query getFile($username: string, $parentPath: string, $fileName: string) {
+      query getFile($username: string, $parentPath: string, $fileName: string, $fileNameWithExt: string) {
         paths(func: type(Path)) @filter(eq(fullPath, $parentPath) AND has(owner)) @cascade {
           fullPath
           owner @filter(eq(username, $username)) {
             username
           }
-          files @filter(eq(name, $fileName)) {
+          files: ~parentPath @filter(type(ContractFile) AND (eq(name, $fileNameWithExt) OR eq(name, $fileName))) {
             uid
             cid
             name
@@ -235,6 +236,7 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
             size
             mimeType
             flags
+            isDeleted
             license
             labels
             thumbnail
@@ -259,7 +261,8 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
     const vars = { 
       $username: username,
       $parentPath: parentPath,
-      $fileName: fileName
+      $fileName: fileName,
+      $fileNameWithExt: fileNameWithExt
     };
 
     const result = await networkClient.query(query, vars);
@@ -268,7 +271,8 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
     // Extract files from the path result
     let files = [];
     if (paths.length > 0 && paths[0].files) {
-      files = paths[0].files;
+      // Handle Dgraph single-element array issue
+      files = Array.isArray(paths[0].files) ? paths[0].files : [paths[0].files];
     }
     
     logger.info('File query result', {
@@ -286,8 +290,8 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
       files = files.filter(file => file.extension === extension);
     }
 
-    // Filter out files with bitflag 2 (thumbnails/hidden files)
-    files = files.filter(file => !((file.flags || 0) & 2));
+    // Filter out files with bitflag 2 (thumbnails/hidden files) and deleted files
+    files = files.filter(file => !((file.flags || 0) & 2) && !file.isDeleted);
     
     if (files.length === 0) {
       return res.status(404).json({ 
@@ -392,8 +396,18 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
       });
     }
     
-    // Normalize directory path
-    const normalizedPath = directoryPath === '' ? '/' : directoryPath;
+    // Normalize directory path - remove trailing slash unless it's root
+    let normalizedPath;
+    if (directoryPath === '' || directoryPath === '/') {
+      normalizedPath = '/';
+    } else {
+      // Remove trailing slash
+      normalizedPath = directoryPath.endsWith('/') ? directoryPath.slice(0, -1) : directoryPath;
+      // Ensure it starts with /
+      if (!normalizedPath.startsWith('/')) {
+        normalizedPath = '/' + normalizedPath;
+      }
+    }
     
     // Query all paths for this user to build directory structure
     // Use pagination to avoid exceeding gRPC message size limits
@@ -405,12 +419,13 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
     while (hasMore) {
       const allPathsQuery = `
         query getAllPaths($userUid: string, $offset: int, $limit: int) {
-          paths(func: type(Path), first: $limit, offset: $offset) @filter(uid_in(owner, $userUid) AND eq(pathType, "directory")) {
+          paths(func: type(Path), first: $limit, offset: $offset) @filter(uid_in(owner, $userUid)) {
+            uid
             fullPath
             pathName
             pathType
             itemCount
-            files {
+            files: ~parentPath @filter(type(ContractFile)) {
               uid
               cid
               name
@@ -421,6 +436,7 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
               labels
               thumbnail
               flags
+              isDeleted
               contract {
                 id
                 blockNumber
@@ -503,24 +519,55 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
     for (const pathEntity of allPaths) {
       const { fullPath, pathName, files } = pathEntity;
       
+      // Debug log
+      logger.debug('Checking path', {
+        fullPath,
+        normalizedPath,
+        isMatch: fullPath === normalizedPath
+      });
+      
       // Check if this path is the requested directory
       if (fullPath === normalizedPath) {
         logger.debug('Found matching path for directory', {
           fullPath,
           hasFiles: !!files,
-          fileCount: files ? files.length : 0
+          fileCount: files ? (Array.isArray(files) ? files.length : 1) : 0
         });
         // Add files from this directory
-        if (files && files.length > 0) {
-          for (const file of files) {
-            // Skip files with bitflag 2 (thumbnails/hidden)
-            if ((file.flags || 0) & 2) {
+        const filesArray = files ? (Array.isArray(files) ? files : [files]) : [];
+        if (filesArray.length > 0) {
+          for (const file of filesArray) {
+            // Skip files with bitflag 2 (thumbnails/hidden) and deleted files
+            if (((file.flags || 0) & 2) || file.isDeleted) {
               continue;
             }
             
             const contract = file.contract;
             
-            contents.set(file.name, {
+            // Skip files without names
+            if (!file.name) {
+              logger.warn('Skipping file without name', { 
+                fileUid: file.uid,
+                cid: file.cid,
+                extension: file.extension
+              });
+              continue;
+            }
+            
+            // Use name+extension as key for grouping versions
+            const fileKey = file.extension ? `${file.name}.${file.extension}` : file.name;
+            
+            // Extract block number from contract ID (format: username:type:blockNumber-txid)
+            let blockNumber = contract?.blockNumber;
+            if (!blockNumber && contract?.id) {
+              const parts = contract.id.split(':');
+              if (parts.length >= 3) {
+                const blockPart = parts[2].split('-')[0];
+                blockNumber = parseInt(blockPart) || 0;
+              }
+            }
+            
+            const fileInfo = {
               name: file.name,
               type: 'file',
               cid: file.cid,
@@ -532,16 +579,57 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
               thumbnail: file.thumbnail || '',
               contract: contract ? {
                 id: contract.id,
-                blockNumber: contract.blockNumber,
+                blockNumber: blockNumber,
                 encryptionData: contract.encryptionData || null,
-                storageNodeCount: contract.storageNodes ? contract.storageNodes.length : 0,
-                storageNodes: contract.storageNodes ? contract.storageNodes.map(n => n.storageAccount?.username).filter(Boolean) : []
+                storageNodeCount: contract.storageNodes ? (Array.isArray(contract.storageNodes) ? contract.storageNodes.length : 1) : 0,
+                storageNodes: contract.storageNodes ? (Array.isArray(contract.storageNodes) ? contract.storageNodes.map(n => n.storageAccount?.username).filter(Boolean) : []) : []
               } : null,
               metadata: {
                 encrypted: contract?.encryptionData ? true : false,
                 autoRenew: true // TODO: get from contract metadata
               }
-            });
+            };
+            
+            // Check if we already have a file with this key
+            if (contents.has(fileKey)) {
+              const existing = contents.get(fileKey);
+              // Convert to revision structure if not already
+              if (!existing.revisions) {
+                // This is the first duplicate, convert to revision structure
+                const currentFile = { ...existing };
+                delete currentFile.revisions; // Remove any revision field from the copy
+                
+                contents.set(fileKey, {
+                  name: existing.name,
+                  type: 'file',
+                  extension: existing.extension || '',
+                  // Use the most recent file's CID as the primary
+                  cid: blockNumber > (existing.contract?.blockNumber || 0) ? file.cid : existing.cid,
+                  size: blockNumber > (existing.contract?.blockNumber || 0) ? file.size : existing.size,
+                  mimeType: existing.mimeType,
+                  license: existing.license || '',
+                  labels: existing.labels || '',
+                  thumbnail: existing.thumbnail || '',
+                  contract: blockNumber > (existing.contract?.blockNumber || 0) ? fileInfo.contract : existing.contract,
+                  metadata: blockNumber > (existing.contract?.blockNumber || 0) ? fileInfo.metadata : existing.metadata,
+                  revisions: [currentFile, fileInfo].sort((a, b) => (b.contract?.blockNumber || 0) - (a.contract?.blockNumber || 0))
+                });
+              } else {
+                // Already has revisions, add the new one and resort
+                existing.revisions.push(fileInfo);
+                existing.revisions.sort((a, b) => (b.contract?.blockNumber || 0) - (a.contract?.blockNumber || 0));
+                
+                // Update the primary file info to the most recent
+                const mostRecent = existing.revisions[0];
+                existing.cid = mostRecent.cid;
+                existing.size = mostRecent.size;
+                existing.contract = mostRecent.contract;
+                existing.metadata = mostRecent.metadata;
+              }
+            } else {
+              // First file with this key
+              contents.set(fileKey, fileInfo);
+            }
           }
         }
       } else if (fullPath.startsWith(normalizedPath)) {
@@ -555,7 +643,7 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
               name: pathName,
               type: 'directory',
               path: fullPath,
-              itemCount: files ? files.filter(f => !((f.flags || 0) & 2)).length : 0
+              itemCount: files ? (Array.isArray(files) ? files.filter(f => !((f.flags || 0) & 2) && !f.isDeleted).length : 1) : 0
             });
           }
         }
@@ -571,6 +659,16 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
     contentsArray.sort((a, b) => {
       if (a.type !== b.type) {
         return a.type === 'directory' ? -1 : 1;
+      }
+      // Defensive check for missing names
+      if (!a.name || !b.name) {
+        logger.error('Missing name in sort', { 
+          aName: a.name, 
+          aType: a.type,
+          bName: b.name,
+          bType: b.type
+        });
+        return (!a.name ? 1 : 0) - (!b.name ? 1 : 0);
       }
       return a.name.localeCompare(b.name);
     });
@@ -726,8 +824,8 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
                 id: contract.id,
                 blockNumber: contract.blockNumber,
                 encryptionData: contract.encryptionData || null,
-                storageNodeCount: contract.storageNodes ? contract.storageNodes.length : 0,
-                storageNodes: contract.storageNodes ? contract.storageNodes.map(n => n.storageAccount?.username).filter(Boolean) : []
+                storageNodeCount: contract.storageNodes ? (Array.isArray(contract.storageNodes) ? contract.storageNodes.length : 1) : 0,
+                storageNodes: contract.storageNodes ? (Array.isArray(contract.storageNodes) ? contract.storageNodes.map(n => n.storageAccount?.username).filter(Boolean) : []) : []
               },
               metadata: {
                 encrypted: contract.metadata?.encrypted || false,
@@ -860,6 +958,10 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
       if (a.type !== b.type) {
         return a.type === 'directory' ? -1 : 1;
       }
+      // Defensive check for missing names
+      if (!a.name || !b.name) {
+        return (!a.name ? 1 : 0) - (!b.name ? 1 : 0);
+      }
       return a.name.localeCompare(b.name);
     });
 
@@ -890,6 +992,7 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
                 mimeType
                 path
                 flags
+                isDeleted
               }
               metadata {
                 folderStructure
@@ -974,6 +1077,7 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
               size
               mimeType
               path
+              isDeleted
             }
           }
         }
@@ -1139,6 +1243,10 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
     
     return Array.from(items.values()).sort((a, b) => {
       if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+      // Defensive check for missing names
+      if (!a.name || !b.name) {
+        return (!a.name ? 1 : 0) - (!b.name ? 1 : 0);
+      }
       return a.name.localeCompare(b.name);
     });
   }
@@ -1188,6 +1296,10 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
     
     return Array.from(items.values()).sort((a, b) => {
       if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+      // Defensive check for missing names
+      if (!a.name || !b.name) {
+        return (!a.name ? 1 : 0) - (!b.name ? 1 : 0);
+      }
       return a.name.localeCompare(b.name);
     });
   }

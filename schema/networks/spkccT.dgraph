@@ -44,7 +44,7 @@ storageNodes: uid @reverse .
 payouts: uid @reverse .
 payoutCount: int @index(int) .
 totalPayout: int @index(int) .
-metadata: uid .
+metadata: string .
 encryptionData: string .
 encryptionType: string @index(term) .
 contentType: string @index(term) .
@@ -62,6 +62,8 @@ labels: string .
 thumbnail: string .
 flags: int .
 contract: uid @reverse .
+isDeleted: bool @index(bool) .
+deletedAt: datetime @index(hour) .
 
 # Balance predicates
 token: string @index(exact) .
@@ -147,6 +149,8 @@ type ContractFile {
   thumbnail
   flags
   contract
+  isDeleted
+  deletedAt
 }
 
 # Balance type
