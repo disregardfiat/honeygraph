@@ -1,4 +1,7 @@
 import { Router } from 'express';
+import { createLogger } from '../lib/logger.js';
+
+const logger = createLogger('spk-routes');
 
 export function createSPKRoutes({ dgraphClient, dataTransformer, schemas, validate }) {
   const router = Router();
@@ -547,6 +550,101 @@ export function createSPKRoutes({ dgraphClient, dataTransformer, schemas, valida
       const result = await dgraphClient.client.newTxn().query(query);
       res.json(result.getJson());
     } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  /**
+   * Get contracts stored by a specific user
+   */
+  router.get('/contracts/stored-by/:username', async (req, res) => {
+    try {
+      const { username } = req.params;
+      
+      const query = `
+        query getStoredContracts($username: string) {
+          account(func: eq(Account.username, $username)) {
+            username
+            contractsStoring {
+              id
+              owner {
+                username
+              }
+              status
+              power
+              nodeTotal
+              isUnderstored
+              fileCount
+              expiresBlock
+              blockNumber
+            }
+          }
+        }
+      `;
+      
+      const txn = dgraphClient.client.newTxn();
+      const result = await txn.queryWithVars(query, { $username: username });
+      const data = result.getJson();
+      const account = data.account?.[0];
+      
+      if (!account) {
+        return res.status(404).json({ error: 'Account not found' });
+      }
+      
+      res.json({
+        username: account.username,
+        contractsStoring: account.contractsStoring || [],
+        count: (account.contractsStoring || []).length
+      });
+    } catch (error) {
+      logger.error('Failed to get stored contracts', { error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  /**
+   * Get understored contracts (nodeTotal < power)
+   */
+  router.get('/contracts/understored', async (req, res) => {
+    try {
+      const { limit = 100, offset = 0 } = req.query;
+      
+      const query = `
+        {
+          contracts(func: type(StorageContract), first: ${limit}, offset: ${offset}) @filter(eq(isUnderstored, true)) {
+            id
+            owner {
+              username
+            }
+            status
+            power
+            nodeTotal
+            fileCount
+            expiresBlock
+            blockNumber
+            storageNodes {
+              username
+            }
+          }
+          
+          total(func: type(StorageContract)) @filter(eq(isUnderstored, true)) {
+            count(uid)
+          }
+        }
+      `;
+      
+      const txn = dgraphClient.client.newTxn();
+      const result = await txn.query(query);
+      const data = result.getJson();
+      
+      res.json({
+        contracts: data.contracts || [],
+        total: data.total?.[0]?.count || 0,
+        limit: parseInt(limit),
+        offset: parseInt(offset)
+      });
+    } catch (error) {
+      logger.error('Failed to get understored contracts', { error: error.message });
       res.status(500).json({ error: error.message });
     }
   });

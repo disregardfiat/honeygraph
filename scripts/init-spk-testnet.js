@@ -144,77 +144,64 @@ async function main() {
       if (stateData.state[pathKey]) {
         let operations;
         
-        // Special handling for contracts - collect ALL contracts first
+        // Special handling for contracts - process one at a time like streaming
         if (pathKey === 'contract') {
-          console.log(chalk.yellow(`\nProcessing contracts with proper file accumulation...`));
+          console.log(chalk.yellow(`\nProcessing contracts individually...`));
           
-          // First, collect ALL contracts and group by file owner (.t field)
-          const contractsByFileOwner = new Map();
           let totalContracts = 0;
+          let contractsProcessed = 0;
+          let contractsErrors = 0;
           
+          // Process each contract individually, just like in streaming
           for (const [username, userContracts] of Object.entries(stateData.state[pathKey])) {
             for (const [contractId, contractData] of Object.entries(userContracts)) {
               totalContracts++;
               
-              // Group by file owner (the .t field)
-              const fileOwner = contractData.t || username;
-              if (!contractsByFileOwner.has(fileOwner)) {
-                contractsByFileOwner.set(fileOwner, []);
-              }
-              
-              contractsByFileOwner.get(fileOwner).push({
+              const operation = {
                 type: 'put',
                 path: ['contract', username, contractId],
                 data: contractData,
                 blockNum: stateData.state.stats?.block_num || 0,
                 timestamp: Date.now()
-              });
-            }
-          }
-          
-          console.log(chalk.yellow(`Found ${totalContracts} contracts for ${contractsByFileOwner.size} file owners`));
-          
-          // Now process contracts grouped by file owner
-          let contractsProcessed = 0;
-          let contractsErrors = 0;
-          let ownersProcessed = 0;
-          
-          for (const [fileOwner, ownerOperations] of contractsByFileOwner) {
-            try {
-              console.log(chalk.gray(`Processing ${ownerOperations.length} contracts for ${fileOwner}...`));
-              
-              // Process all contracts for this file owner together
-              // This ensures all files for the same paths are accumulated properly
-              const blockInfo = {
-                blockNum: stateData.state.stats?.block_num || 0,
-                timestamp: Date.now()
               };
               
-              const mutations = await transformer.transformOperations(ownerOperations, blockInfo);
-              
-              if (mutations.length > 0) {
-                const txn = dgraphClient.client.newTxn();
-                try {
-                  const mu = new dgraph.Mutation();
-                  mu.setSetJson(mutations);
-                  await txn.mutate(mu);
-                  await txn.commit();
-                  contractsProcessed += ownerOperations.length;
-                  ownersProcessed++;
-                } catch (error) {
-                  console.log(chalk.red(`File owner ${fileOwner} contracts import error: ${error.message}`));
-                  contractsErrors += ownerOperations.length;
-                } finally {
-                  await txn.discard();
+              try {
+                const blockInfo = {
+                  blockNum: stateData.state.stats?.block_num || 0,
+                  timestamp: Date.now()
+                };
+                
+                // Transform single contract
+                const mutations = await transformer.transformOperations([operation], blockInfo);
+                
+                if (mutations.length > 0) {
+                  const txn = dgraphClient.client.newTxn();
+                  try {
+                    const mu = new dgraph.Mutation();
+                    mu.setSetJson(mutations);
+                    await txn.mutate(mu);
+                    await txn.commit();
+                    contractsProcessed++;
+                  } catch (error) {
+                    console.log(chalk.red(`Contract ${contractId} import error: ${error.message}`));
+                    contractsErrors++;
+                  } finally {
+                    await txn.discard();
+                  }
                 }
+                
+                // Progress indicator every 100 contracts
+                if (contractsProcessed % 100 === 0) {
+                  console.log(chalk.gray(`Processed ${contractsProcessed}/${totalContracts} contracts...`));
+                }
+              } catch (error) {
+                console.log(chalk.red(`Contract ${contractId} transform error: ${error.message}`));
+                contractsErrors++;
               }
-            } catch (error) {
-              console.log(chalk.red(`File owner ${fileOwner} contracts transform error: ${error.message}`));
-              contractsErrors += ownerOperations.length;
             }
           }
           
-          console.log(chalk.green(`✨ Processed ${contractsProcessed} contracts from ${ownersProcessed} file owners!`));
+          console.log(chalk.green(`✨ Processed ${contractsProcessed} contracts!`));
           if (contractsErrors > 0) {
             console.log(chalk.yellow(`⚠️  ${contractsErrors} contracts failed`));
           }

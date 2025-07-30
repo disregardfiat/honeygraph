@@ -106,13 +106,11 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
         contract(func: eq(StorageContract.id, $contractId)) {
           id
           storageNodes {
-            storageAccount {
-              username
-              services @filter(eq(serviceType, "IPFS")) {
-                api
-                active
-                enabled
-              }
+            username
+            services @filter(eq(serviceType, "IPFS")) {
+              api
+              active
+              enabled
             }
           }
         }
@@ -130,12 +128,12 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
       const gateways = [];
       
       for (const node of contract.storageNodes) {
-        if (node.storageAccount?.services) {
-          for (const service of node.storageAccount.services) {
+        if (node.services) {
+          for (const service of node.services) {
             if (service.active && service.enabled === 1 && service.api) {
               gateways.push({
                 url: service.api,
-                account: node.storageAccount.username,
+                account: node.username,
                 priority: gateways.length // First nodes have higher priority
               });
             }
@@ -248,9 +246,7 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
               }
               broker
               storageNodes {
-                storageAccount {
-                  username
-                }
+                username
               }
             }
           }
@@ -442,9 +438,7 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
                 blockNumber
                 encryptionData
                 storageNodes {
-                  storageAccount {
-                    username
-                  }
+                  username
                 }
               }
             }
@@ -582,7 +576,14 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
                 blockNumber: blockNumber,
                 encryptionData: contract.encryptionData || null,
                 storageNodeCount: contract.storageNodes ? (Array.isArray(contract.storageNodes) ? contract.storageNodes.length : 1) : 0,
-                storageNodes: contract.storageNodes ? (Array.isArray(contract.storageNodes) ? contract.storageNodes.map(n => n.storageAccount?.username).filter(Boolean) : []) : []
+                storageNodes: (() => {
+                  console.log('Processing storageNodes for contract:', contract.id, {
+                    hasStorageNodes: !!contract.storageNodes,
+                    isArray: Array.isArray(contract.storageNodes),
+                    storageNodes: contract.storageNodes
+                  });
+                  return contract.storageNodes ? (Array.isArray(contract.storageNodes) ? contract.storageNodes.map(n => n.username).filter(Boolean) : [contract.storageNodes.username].filter(Boolean)) : [];
+                })()
               } : null,
               metadata: {
                 encrypted: contract?.encryptionData ? true : false,
@@ -612,11 +613,26 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
                   thumbnail: existing.thumbnail || '',
                   contract: blockNumber > (existing.contract?.blockNumber || 0) ? fileInfo.contract : existing.contract,
                   metadata: blockNumber > (existing.contract?.blockNumber || 0) ? fileInfo.metadata : existing.metadata,
-                  revisions: [currentFile, fileInfo].sort((a, b) => (b.contract?.blockNumber || 0) - (a.contract?.blockNumber || 0))
+                  revisions: currentFile.cid === fileInfo.cid 
+                    ? [blockNumber > (currentFile.contract?.blockNumber || 0) ? fileInfo : currentFile]
+                    : [currentFile, fileInfo].sort((a, b) => (b.contract?.blockNumber || 0) - (a.contract?.blockNumber || 0))
                 });
               } else {
-                // Already has revisions, add the new one and resort
-                existing.revisions.push(fileInfo);
+                // Already has revisions, check if this CID already exists
+                const existingRevisionIndex = existing.revisions.findIndex(r => r.cid === fileInfo.cid);
+                
+                if (existingRevisionIndex === -1) {
+                  // New CID, add it
+                  existing.revisions.push(fileInfo);
+                } else {
+                  // Same CID exists, update if this contract is newer
+                  const existingRevision = existing.revisions[existingRevisionIndex];
+                  if (blockNumber > (existingRevision.contract?.blockNumber || 0)) {
+                    existing.revisions[existingRevisionIndex] = fileInfo;
+                  }
+                }
+                
+                // Resort by block number
                 existing.revisions.sort((a, b) => (b.contract?.blockNumber || 0) - (a.contract?.blockNumber || 0));
                 
                 // Update the primary file info to the most recent
@@ -825,7 +841,7 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
                 blockNumber: contract.blockNumber,
                 encryptionData: contract.encryptionData || null,
                 storageNodeCount: contract.storageNodes ? (Array.isArray(contract.storageNodes) ? contract.storageNodes.length : 1) : 0,
-                storageNodes: contract.storageNodes ? (Array.isArray(contract.storageNodes) ? contract.storageNodes.map(n => n.storageAccount?.username).filter(Boolean) : []) : []
+                storageNodes: contract.storageNodes ? (Array.isArray(contract.storageNodes) ? contract.storageNodes.map(n => n.username).filter(Boolean) : [contract.storageNodes.username].filter(Boolean)) : []
               },
               metadata: {
                 encrypted: contract.metadata?.encrypted || false,

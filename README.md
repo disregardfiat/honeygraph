@@ -136,6 +136,179 @@ docker compose up --build honeygraph-api
 - `GET /fse/:username/` - Files shared with user (encrypted)
 - `GET /fss/:username/` - Files shared by user
 
+#### SPK Network File System Overview
+
+The SPK Network implements a decentralized virtual file system where users can store files on IPFS with metadata managed on-chain. Key features:
+
+- **Virtual Paths**: Files are organized in a hierarchical folder structure
+- **IPFS Storage**: Actual file content is stored on IPFS (content-addressed)
+- **On-Chain Metadata**: File names, paths, and metadata stored in storage contracts
+- **Deduplication**: Files are deduplicated by CID across the entire network
+- **Storage Nodes**: Users can volunteer to store files and earn rewards
+- **Revisions**: Files can have multiple versions while maintaining the same path
+
+#### File Metadata Format
+
+Files in storage contracts use a compact metadata format to save blockchain space:
+
+```
+Contract metadata: "autoRenew|folderStructure,file1,file2,..."
+File format: "name,ext.pathIndex,thumb,flags-license-labels"
+```
+
+Example:
+```
+"1|NFTs,Resources,bz,nft.3,,0--,hf,txt.3,,0--"
+```
+
+This represents:
+- Auto-renew enabled (1)
+- Custom folder "NFTs" at index 1, "Resources" at index 2
+- File "bz.nft" in folder 3 (Images preset)
+- File "hf.txt" in folder 3 (Images preset)
+
+#### Folder Structure
+
+1. **Root Directory** (`/`) - Path index 0
+2. **First Custom Folder** - Path index 1 (or contract block number if no custom folder)
+3. **Preset Folders** - Path indices 2-9:
+   - 2: Documents
+   - 3: Images
+   - 4: Videos
+   - 5: Music
+   - 6: Archives
+   - 7: Code
+   - 8: Trash
+   - 9: Misc
+
+#### Storage Contracts
+
+Storage contracts define who stores files and for how long:
+
+```json
+{
+  "id": "username:type:blockNumber-txid",
+  "purchaser": "buyer-username",
+  "owner": "file-owner-username",
+  "power": 1000,              // Storage power required
+  "nodeTotal": 3,             // Current storage nodes
+  "storageNodes": ["node1", "node2", "node3"],
+  "expiresBlock": 97938326,
+  "status": "ACTIVE",
+  "fileCount": 5,
+  "metadata": {
+    "autoRenew": true,
+    "encrypted": false
+  }
+}
+```
+
+#### API Response Format
+
+The filesystem API returns a structured response:
+
+```json
+{
+  "path": "/NFTs",
+  "username": "disregardfiat",
+  "type": "directory",
+  "contents": [
+    {
+      "name": "Resources",
+      "type": "directory",
+      "path": "/NFTs/Resources",
+      "itemCount": 11
+    },
+    {
+      "name": "bz",
+      "type": "file",
+      "extension": "nft",
+      "cid": "QmUM2sBkUtuzUUj2kUJzSTD7Wz2S4hCqVoeBKzSBDjTb3L",
+      "size": 509777,
+      "mimeType": "application/nft",
+      "contract": {
+        "id": "disregardfiat:0:94477061-457c1cb54b53658ec034b719ff8c158bd85ea430",
+        "blockNumber": 94477061,
+        "storageNodes": ["dlux-io"]
+      },
+      "revisions": [
+        {
+          "cid": "QmUM2sBkUtuzUUj2kUJzSTD7Wz2S4hCqVoeBKzSBDjTb3L",
+          "contract": { "blockNumber": 94477061 }
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### File Deduplication
+
+Files are automatically deduplicated by their IPFS CID:
+- Multiple contracts can reference the same file
+- Files appear in each owner's filesystem
+- The most recent contract is shown as the primary
+- All contracts are available in the `revisions` array
+
+#### Storage Node APIs
+
+Query which nodes are storing contracts:
+
+```bash
+# Get contracts stored by a specific user
+curl http://localhost:3030/spk/contracts/stored-by/dlux-io
+
+# Find understored contracts (nodeTotal < power)
+curl http://localhost:3030/spk/contracts/understored
+```
+
+#### Example Usage
+
+**Browse a user's filesystem:**
+```bash
+# Get root directory
+curl http://localhost:3030/fs/disregardfiat/
+
+# Browse into a directory
+curl http://localhost:3030/fs/disregardfiat/NFTs/
+
+# Get file redirect (follows to IPFS gateway)
+curl -L http://localhost:3030/fs/disregardfiat/NFTs/bz.nft
+```
+
+**Search for files:**
+```bash
+# Search by name
+curl "http://localhost:3030/api/spk/files/search?q=banner"
+
+# Search by tags
+curl "http://localhost:3030/api/spk/files/search?tags=nft,art"
+
+# Search by owner
+curl "http://localhost:3030/api/spk/files/search?owner=disregardfiat"
+```
+
+#### Technical Implementation
+
+**Data Flow:**
+1. Storage contracts are created on the SPK Network blockchain
+2. Honeygraph processes contracts individually (like streaming)
+3. Files are deduplicated by CID using the `ensureFile` method
+4. Virtual paths are created/updated with file references
+5. Storage nodes are tracked as Account references
+
+**Key Components:**
+- `data-transformer.js` - Transforms blockchain data to Dgraph format
+- `filesystem.js` - Builds virtual filesystem views from Path entities
+- `spk-data-transformer.js` - SPK-specific transformations
+- `init-spk-testnet.js` - Imports complete network state
+
+**Deduplication Process:**
+1. Check if file CID exists in current batch (mutations map)
+2. Query database for existing file with same CID
+3. Create new file only if not found
+4. Update contract reference if newer
+
 ### SPK Network APIs
 - `GET /api/spk/user/:username` - Complete user profile with balances
 - `GET /api/spk/files/search` - Search files across network
