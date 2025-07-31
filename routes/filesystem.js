@@ -217,16 +217,37 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
       extension = '';
     }
     
-    // Query for files matching name with or without extension
-    // First try exact match, then try without extension
+    // Query for files matching name with or without extension  
+    // Debug: First find all paths for this user to see what exists
+    const debugQuery = `
+      query debugPaths($username: string) {
+        user(func: eq(username, $username)) @filter(type(Account)) {
+          uid
+          username
+          paths: ~owner @filter(type(Path)) {
+            fullPath
+            pathName
+          }
+        }
+      }
+    `;
+    
+    const debugResult = await networkClient.query(debugQuery, { $username: username });
+    logger.info('Debug: All paths for user', {
+      username,
+      user: debugResult.user?.[0],
+      pathCount: debugResult.user?.[0]?.paths?.length || 0,
+      paths: debugResult.user?.[0]?.paths?.map(p => p.fullPath) || []
+    });
+    
     const query = `
-      query getFile($username: string, $parentPath: string, $fileName: string, $fileNameWithExt: string) {
-        paths(func: type(Path)) @filter(eq(fullPath, $parentPath) AND has(owner)) @cascade {
+      query getFile($username: string, $parentPath: string, $fileName: string, $extension: string) {
+        paths(func: type(Path)) @filter(eq(fullPath, $parentPath) AND has(owner)) {
           fullPath
           owner @filter(eq(username, $username)) {
             username
           }
-          files: ~parentPath @filter(type(ContractFile) AND (eq(name, $fileNameWithExt) OR eq(name, $fileName))) {
+          files: ~parentPath @filter(type(ContractFile) AND eq(name, $fileName) AND eq(extension, $extension)) {
             uid
             cid
             name
@@ -258,7 +279,7 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
       $username: username,
       $parentPath: parentPath,
       $fileName: fileName,
-      $fileNameWithExt: fileNameWithExt
+      $extension: extension
     };
 
     const result = await networkClient.query(query, vars);
@@ -276,15 +297,15 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
       parentPath,
       fileName,
       extension,
+      fileNameWithExt,
       pathsFound: paths.length,
       resultCount: files.length,
+      queryVars: vars,
+      rawPaths: paths.map(p => ({ fullPath: p.fullPath, hasFiles: !!p.files, fileCount: p.files ? (Array.isArray(p.files) ? p.files.length : 1) : 0 })),
       files: files.map(f => ({ name: f.name, extension: f.extension, cid: f.cid }))
     });
     
-    // Filter by extension if specified
-    if (extension) {
-      files = files.filter(file => file.extension === extension);
-    }
+    // Extension filtering is now done in the query
 
     // Filter out files with bitflag 2 (thumbnails/hidden files) and deleted files
     files = files.filter(file => !((file.flags || 0) & 2) && !file.isDeleted);
