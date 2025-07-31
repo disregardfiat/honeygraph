@@ -6,6 +6,7 @@ const logger = createLogger('filesystem-api');
 export function createFileSystemRoutes({ dgraphClient, networkManager }) {
   const router = Router();
 
+
   /**
    * Get files shared with me (encrypted files I have access to)
    * GET /fse/:username/*path
@@ -45,6 +46,39 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
   });
 
   /**
+   * Handle root-level files - /username/filename.ext
+   * GET /:username/:filename (where filename contains a dot)
+   */
+  router.get('/:username/:filename', async (req, res, next) => {
+    const { username, filename } = req.params;
+    
+    // Only handle requests with dots (potential file extensions)
+    if (!filename.includes('.')) {
+      return next();
+    }
+    
+    logger.info('=== ROOT-LEVEL FILE ROUTE HIT ===', { username, filename, url: req.url });
+    
+    try {
+      // Look for the file in the root directory ("/")
+      await handleFileRequest(dgraphClient, username, `/${filename}`, res);
+    } catch (error) {
+      logger.error('Root-level file request failed', { 
+        error: error.message,
+        stack: error.stack,
+        username,
+        filename
+      });
+      res.status(500).json({ 
+        error: 'Internal server error',
+        message: error.message,
+        username,
+        filename
+      });
+    }
+  });
+
+  /**
    * Get directory listing or file redirect
    * GET /fs/:username/*path
    */
@@ -60,26 +94,39 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
       // Normalize path (ensure it starts with /)
       const normalizedPath = requestPath.startsWith('/') ? requestPath : `/${requestPath}`;
       
-      // Check if this is a file or directory request
+      // Try to handle request in order: file -> directory -> search
       const pathParts = normalizedPath.split('/').filter(p => p);
-      const possibleFileName = pathParts[pathParts.length - 1];
-      const hasExtension = possibleFileName && possibleFileName.includes('.');
+      const lastSegment = pathParts[pathParts.length - 1] || '';
       
-      logger.info('Request type detection', {
+      logger.info('Smart request handling', {
         normalizedPath,
         pathParts,
-        possibleFileName,
-        hasExtension
+        lastSegment
       });
       
-      if (hasExtension) {
-        // This looks like a file request
-        logger.info('Detected as file request, calling handleFileRequest');
+      // First, always try to find an exact file match
+      try {
+        logger.info('Trying file request first');
         await handleFileRequest(dgraphClient, username, normalizedPath, res);
-      } else {
-        // This is a directory request
-        logger.info('Detected as directory request, calling handleDirectoryRequest');
-        await handleDirectoryRequest(dgraphClient, username, normalizedPath, res);
+        return; // If file found, we're done
+      } catch (fileError) {
+        logger.info('File not found, trying directory', { error: fileError.message });
+        
+        // Second, try to find an exact directory match
+        try {
+          await handleDirectoryRequest(dgraphClient, username, normalizedPath, res);
+          return; // If directory found, we're done
+        } catch (dirError) {
+          logger.info('Directory not found, trying search', { error: dirError.message });
+          
+          // Third, treat as search pattern if we have a search term
+          if (lastSegment && lastSegment.length > 0) {
+            await handleSearchRequest(dgraphClient, networkManager, username, normalizedPath, lastSegment, req, res);
+          } else {
+            // No search term, return directory not found
+            throw dirError;
+          }
+        }
       }
     } catch (error) {
       logger.error('Filesystem request failed', { 
@@ -217,37 +264,15 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
       extension = '';
     }
     
-    // Query for files matching name with or without extension  
-    // Debug: First find all paths for this user to see what exists
-    const debugQuery = `
-      query debugPaths($username: string) {
-        user(func: eq(username, $username)) @filter(type(Account)) {
-          uid
-          username
-          paths: ~owner @filter(type(Path)) {
-            fullPath
-            pathName
-          }
-        }
-      }
-    `;
-    
-    const debugResult = await networkClient.query(debugQuery, { $username: username });
-    logger.info('Debug: All paths for user', {
-      username,
-      user: debugResult.user?.[0],
-      pathCount: debugResult.user?.[0]?.paths?.length || 0,
-      paths: debugResult.user?.[0]?.paths?.map(p => p.fullPath) || []
-    });
-    
+    // Use the same query structure as directory listing, then filter in JavaScript
     const query = `
-      query getFile($username: string, $parentPath: string, $fileName: string, $extension: string) {
+      query getFile($username: string, $parentPath: string) {
         paths(func: type(Path)) @filter(eq(fullPath, $parentPath) AND has(owner)) {
           fullPath
           owner @filter(eq(username, $username)) {
             username
           }
-          files: ~parentPath @filter(type(ContractFile) AND eq(name, $fileName) AND eq(extension, $extension)) {
+          files: ~parentPath @filter(type(ContractFile)) {
             uid
             cid
             name
@@ -274,34 +299,41 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
         }
       }
     `;
-
+    
     const vars = { 
       $username: username,
-      $parentPath: parentPath,
-      $fileName: fileName,
-      $extension: extension
+      $parentPath: parentPath
     };
 
     const result = await networkClient.query(query, vars);
     const paths = result.paths || [];
     
-    // Extract files from the path result
-    let files = [];
-    if (paths.length > 0 && paths[0].files) {
-      // Handle Dgraph single-element array issue
-      files = Array.isArray(paths[0].files) ? paths[0].files : [paths[0].files];
+    // Extract files from ALL paths (not just the first one)
+    let allFiles = [];
+    for (const pathEntity of paths) {
+      if (pathEntity.files) {
+        const filesArray = Array.isArray(pathEntity.files) ? pathEntity.files : [pathEntity.files];
+        allFiles = allFiles.concat(filesArray);
+      }
     }
     
-    logger.info('File query result', {
+    // Filter files to match the requested filename and extension
+    let files = allFiles.filter(file => {
+      const fileExt = file.extension || '';
+      return file.name === fileName && fileExt === extension;
+    });
+    
+    logger.info('File query debug', {
       username,
       parentPath,
       fileName,
       extension,
       fileNameWithExt,
       pathsFound: paths.length,
-      resultCount: files.length,
-      queryVars: vars,
-      rawPaths: paths.map(p => ({ fullPath: p.fullPath, hasFiles: !!p.files, fileCount: p.files ? (Array.isArray(p.files) ? p.files.length : 1) : 0 })),
+      allFilesCount: allFiles.length,
+      matchingFilesCount: files.length,
+      allFilesPreview: allFiles.slice(0, 5).map(f => ({ name: f.name, extension: f.extension || 'EMPTY' })),
+      searchCriteria: { name: fileName, extension: extension || 'EMPTY' },
       files: files.map(f => ({ name: f.name, extension: f.extension, cid: f.cid }))
     });
     
@@ -311,11 +343,7 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
     files = files.filter(file => !((file.flags || 0) & 2) && !file.isDeleted);
     
     if (files.length === 0) {
-      return res.status(404).json({ 
-        error: 'File not found',
-        path: filePath,
-        username 
-      });
+      throw new Error(`File not found: ${filePath}`);
     }
 
     // Sort by block number (newest first) for version control
@@ -405,12 +433,7 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
     
     if (!user) {
       logger.info('User not found', { username });
-      return res.json({
-        path: directoryPath,
-        username: username,
-        type: 'directory',
-        contents: []
-      });
+      throw new Error(`User not found: ${username}`);
     }
     
     // Normalize directory path - remove trailing slash unless it's root
@@ -726,6 +749,194 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
     };
 
     res.json(directoryResponse);
+  }
+
+  /**
+   * Handle search requests - find files/directories matching pattern
+   */
+  async function handleSearchRequest(dgraphClient, networkManager, username, fullPath, searchTerm, req, res) {
+    logger.info('handleSearchRequest called', { username, fullPath, searchTerm });
+    
+    // Get pagination parameters
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 100;
+    const offset = (page - 1) * limit;
+    
+    // Get parent directory (remove search term from path)
+    const pathParts = fullPath.split('/').filter(p => p);
+    pathParts.pop(); // Remove search term
+    const parentPath = pathParts.length > 0 ? `/${pathParts.join('/')}` : '/';
+    
+    // Get the correct network client (SPK network data is in spkccT_ namespace)
+    const spkNetwork = networkManager.getNetwork('spkccT_');
+    const networkClient = spkNetwork ? spkNetwork.dgraphClient : dgraphClient;
+    
+    // Get user UID first
+    const userQuery = `
+      query getUser($username: string) {
+        user(func: eq(username, $username)) @filter(type(Account)) {
+          uid
+          username
+        }
+      }
+    `;
+    
+    const userResult = await (networkClient.queryGlobal ? 
+      networkClient.queryGlobal(userQuery, { $username: username }) :
+      networkClient.query(userQuery, { $username: username }));
+    const user = userResult.user?.[0];
+    
+    if (!user) {
+      throw new Error(`User not found: ${username}`);
+    }
+    
+    // Search for matching files and directories
+    const searchQuery = `
+      query searchFilesAndDirs($userUid: string, $parentPath: string, $searchTerm: string, $offset: int, $limit: int) {
+        # Search files in the parent directory
+        files(func: type(ContractFile), first: $limit, offset: $offset) @filter(
+          uid_in(~parentPath, func(type(Path)) @filter(
+            uid_in(owner, $userUid) AND 
+            (eq(fullPath, $parentPath) OR regexp(fullPath, /^${parentPath}\/[^\/]*$/))
+          )) AND 
+          regexp(name, /${searchTerm}/i)
+        ) {
+          uid
+          cid
+          name
+          extension
+          size
+          mimeType
+          flags
+          isDeleted
+          parentPath {
+            fullPath
+            owner {
+              username
+            }
+          }
+          contract {
+            id
+            blockNumber
+            storageNodes {
+              username
+            }
+          }
+        }
+        
+        # Search directories
+        dirs(func: type(Path)) @filter(
+          uid_in(owner, $userUid) AND 
+          regexp(fullPath, /^${parentPath}\/[^\/]*${searchTerm}[^\/]*$/) AND
+          ne(fullPath, $parentPath)
+        ) {
+          uid
+          fullPath  
+          pathName
+          pathType
+          itemCount
+        }
+        
+        # Count total matches for pagination
+        totalFiles(func: type(ContractFile)) @filter(
+          uid_in(~parentPath, func(type(Path)) @filter(
+            uid_in(owner, $userUid) AND 
+            (eq(fullPath, $parentPath) OR regexp(fullPath, /^${parentPath}\/[^\/]*$/))
+          )) AND 
+          regexp(name, /${searchTerm}/i)
+        ) {
+          count(uid)
+        }
+        
+        totalDirs(func: type(Path)) @filter(
+          uid_in(owner, $userUid) AND 
+          regexp(fullPath, /^${parentPath}\/[^\/]*${searchTerm}[^\/]*$/) AND
+          ne(fullPath, $parentPath)
+        ) {
+          count(uid)
+        }
+      }
+    `;
+    
+    const searchResult = await networkClient.query(searchQuery, {
+      $userUid: user.uid,
+      $parentPath: parentPath,
+      $searchTerm: searchTerm,
+      $offset: offset.toString(),
+      $limit: limit.toString()
+    });
+    
+    const files = (searchResult.files || []).filter(f => !((f.flags || 0) & 2) && !f.isDeleted);
+    const dirs = searchResult.dirs || [];
+    const totalFiles = searchResult.totalFiles?.[0]?.count || 0;
+    const totalDirs = searchResult.totalDirs?.[0]?.count || 0;
+    const totalResults = totalFiles + totalDirs;
+    
+    // Format results
+    const results = [];
+    
+    // Add directories first
+    for (const dir of dirs) {
+      results.push({
+        name: dir.pathName || dir.fullPath.split('/').pop(),
+        type: 'directory',
+        path: dir.fullPath,
+        itemCount: dir.itemCount || 0
+      });
+    }
+    
+    // Add files
+    for (const file of files) {
+      const fileKey = file.extension ? `${file.name}.${file.extension}` : file.name;
+      results.push({
+        name: file.name,
+        type: 'file',
+        cid: file.cid,
+        extension: file.extension || '',
+        size: file.size,
+        mimeType: file.mimeType,
+        contract: {
+          id: file.contract.id,
+          blockNumber: file.contract.blockNumber,
+          storageNodes: file.contract.storageNodes ? 
+            (Array.isArray(file.contract.storageNodes) ? 
+              file.contract.storageNodes.map(n => n.username).filter(Boolean) : 
+              [file.contract.storageNodes.username].filter(Boolean)) : []
+        }
+      });
+    }
+    
+    // Sort results: directories first, then files, alphabetically
+    results.sort((a, b) => {
+      if (a.type !== b.type) {
+        return a.type === 'directory' ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name);
+    });
+    
+    logger.info('Search results', {
+      searchTerm,
+      parentPath,
+      resultsCount: results.length,
+      totalResults,
+      page,
+      limit
+    });
+    
+    res.json({
+      path: parentPath,
+      searchTerm: searchTerm,
+      username: username,
+      type: 'search',
+      contents: results,
+      pagination: {
+        page: page,
+        limit: limit,
+        total: totalResults,
+        pages: Math.ceil(totalResults / limit),
+        hasMore: page < Math.ceil(totalResults / limit)
+      }
+    });
   }
 
   /**
@@ -1340,6 +1551,7 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
       return a.name.localeCompare(b.name);
     });
   }
+
 
   return router;
 }

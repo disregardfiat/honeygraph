@@ -18,7 +18,9 @@ COPY --chown=nodejs:nodejs package*.json ./
 
 # Install dependencies as nodejs user
 USER nodejs
-RUN npm config set strict-ssl false && npm install --omit=dev
+RUN npm config set strict-ssl false && \
+    npm config set registry http://registry.npmjs.org/ && \
+    npm install --omit=dev --legacy-peer-deps
 
 # Copy application code (updated 2025-07-17T13:23 - added folder counts)
 COPY --chown=nodejs:nodejs . .
