@@ -710,7 +710,37 @@ export function createFileSystemRoutes({ dgraphClient, networkManager }) {
       }
     }
     
-    // Item counts are now calculated directly from the files array in each path
+    // Count files for all directories more accurately
+    // We need to do a separate count because the files array might be incomplete
+    const directoryCounts = new Map();
+    
+    // First, count all files by their parent path
+    for (const pathEntity of allPaths) {
+      const { fullPath, files } = pathEntity;
+      if (files && files.length > 0) {
+        const filesArray = Array.isArray(files) ? files : [files];
+        const visibleFiles = filesArray.filter(f => !((f.flags || 0) & 2) && !f.isDeleted);
+        
+        // Store the count for this path
+        directoryCounts.set(fullPath, visibleFiles.length);
+      }
+    }
+    
+    // Update counts for all directories in contents
+    for (const [key, item] of contents) {
+      if (item.type === 'directory') {
+        // Check if we have a count for this directory's path
+        const count = directoryCounts.get(item.path);
+        if (count !== undefined) {
+          item.itemCount = count;
+          logger.debug('Updated directory count from path data', {
+            directory: item.name,
+            path: item.path,
+            count: count
+          });
+        }
+      }
+    }
     
     // Convert map to sorted array
     const contentsArray = Array.from(contents.values());

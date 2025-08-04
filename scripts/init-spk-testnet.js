@@ -213,40 +213,57 @@ async function main() {
           operations = flattenStateToOperations(stateData.state[pathKey], [pathKey], stateData.state.stats?.block_num || 0);
         }
         
-        // Process other data types in batch (not contracts)
+        // Process other data types atomically, one operation at a time
         if (operations.length > 0) {
-          try {
-            const blockInfo = {
-              blockNum: stateData.state.stats?.block_num || 0,
-              timestamp: Date.now()
-            };
-            
-            const mutations = await transformer.transformOperations(operations, blockInfo);
-            
-            if (mutations.length > 0) {
-              // Import mutations
-              const txn = dgraphClient.client.newTxn();
-              try {
-                const mu = new dgraph.Mutation();
-                mu.setSetJson(mutations);
-                await txn.mutate(mu);
-                await txn.commit();
-                totalMutations += mutations.length;
-              } finally {
-                await txn.discard();
+          console.log(chalk.yellow(`\nProcessing ${operations.length} ${pathKey} operations atomically...`));
+          
+          let opsProcessed = 0;
+          let opsErrors = 0;
+          
+          // Process each operation individually, just like streaming
+          for (const operation of operations) {
+            try {
+              const blockInfo = {
+                blockNum: stateData.state.stats?.block_num || 0,
+                timestamp: Date.now()
+              };
+              
+              // Transform single operation
+              const mutations = await transformer.transformOperations([operation], blockInfo);
+              
+              if (mutations.length > 0) {
+                const txn = dgraphClient.client.newTxn();
+                try {
+                  const mu = new dgraph.Mutation();
+                  mu.setSetJson(mutations);
+                  await txn.mutate(mu);
+                  await txn.commit();
+                  totalMutations += mutations.length;
+                  opsProcessed++;
+                } catch (error) {
+                  console.log(chalk.red(`${pathKey} operation import error: ${error.message}`));
+                  opsErrors++;
+                } finally {
+                  await txn.discard();
+                }
               }
+              
+              // Progress indicator every 100 operations
+              if (opsProcessed % 100 === 0) {
+                console.log(chalk.gray(`Processed ${opsProcessed}/${operations.length} ${pathKey} operations...`));
+              }
+            } catch (error) {
+              console.log(chalk.red(`${pathKey} operation transform error: ${error.message}`));
+              opsErrors++;
             }
-            totalOperations += operations.length;
-            
-            // Update progress
-            spinner.text = `Importing data... (${totalOperations} operations, ${totalMutations} mutations)`;
-          } catch (error) {
-            logger.error('Failed to process operation batch', { 
-              pathKey: pathKey, 
-              operationCount: operations.length,
-              error: error.message 
-            });
           }
+          
+          console.log(chalk.green(`✨ Processed ${opsProcessed} ${pathKey} operations!`));
+          if (opsErrors > 0) {
+            console.log(chalk.yellow(`⚠️  ${opsErrors} operations failed`));
+          }
+          
+          totalOperations += opsProcessed;
         }
       }
     }
