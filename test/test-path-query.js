@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { DgraphClient } from './lib/dgraph-client.js';
-import { createLogger } from './lib/logger.js';
+import { DgraphClient } from '../lib/dgraph-client.js';
+import { createLogger } from '../lib/logger.js';
 
 async function testPathQuery() {
   const logger = createLogger('test-query');

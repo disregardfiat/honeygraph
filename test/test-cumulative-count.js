@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
-import { DataTransformer } from './lib/data-transformer.js';
-import { DgraphClient } from './lib/dgraph-client.js';
-import { createLogger } from './lib/logger.js';
+import { DataTransformer } from '../lib/data-transformer.js';
+import { DgraphClient } from '../lib/dgraph-client.js';
+import { createLogger } from '../lib/logger.js';
 
 async function testCumulativeCount() {
   const logger = createLogger('test-cumulative');

@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-import { DataTransformer } from './lib/data-transformer.js';
-import { DgraphClient } from './lib/dgraph-client.js';
-import { createLogger } from './lib/logger.js';
-import { pathAccumulator } from './lib/path-accumulator.js';
+import { DataTransformer } from '../lib/data-transformer.js';
+import { DgraphClient } from '../lib/dgraph-client.js';
+import { createLogger } from '../lib/logger.js';
+import { pathAccumulator } from '../lib/path-accumulator.js';
 
 async function testBatchAccumulation() {
   const logger = createLogger('test-batch');

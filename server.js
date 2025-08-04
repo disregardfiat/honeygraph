@@ -134,15 +134,8 @@ app.use('/api/read', limiter);
 app.use('/api/write', strictLimiter);
 app.use('/api/replicate', strictLimiter);
 
-// Import filesystem and docs routes separately for root-level mounting
+// Import filesystem routes separately for root-level mounting
 import { createFileSystemRoutes } from './routes/filesystem.js';
-import { createDocsRoutes } from './routes/docs.js';
-
-// Serve static files from public directory
-app.use(express.static(path.join(__dirname, 'public')));
-
-// Mount docs routes
-app.use('/api/docs', createDocsRoutes());
 
 // Mount filesystem routes at root for clean URLs
 app.use('/', createFileSystemRoutes({ dgraphClient, networkManager }));
@@ -164,31 +157,11 @@ app.get('/api/honeygraph-peers', (req, res) => {
 app.get('/health', async (req, res) => {
   try {
     await dgraphClient.health();
-    
-    // Get authorized accounts
-    const authorizedAccounts = (process.env.AUTHORIZED_HONEYCOMB_NODES || '')
-      .split(',')
-      .filter(a => a.trim())
-      .map(a => a.trim().toLowerCase());
-    
-    // Get WebSocket stats from fork handler
-    const wsStats = forkHandler.getStats ? forkHandler.getStats() : {};
-    
-    // Get connected nodes from fork handler
-    const connectedNodes = forkHandler.getConnectedNodes ? forkHandler.getConnectedNodes() : [];
-    
     res.json({ 
       status: 'healthy',
       service: 'honeygraph',
       uptime: process.uptime(),
-      memory: process.memoryUsage(),
-      websocket: wsStats,
-      authorization: {
-        enabled: process.env.REQUIRE_HIVE_AUTH === 'true',
-        mode: authorizedAccounts.length > 0 ? 'whitelist' : 'any-authenticated',
-        authorizedNodes: authorizedAccounts.length > 0 ? authorizedAccounts : ['any authenticated Hive account'],
-        connectedNodes: connectedNodes
-      }
+      memory: process.memoryUsage()
     });
   } catch (error) {
     res.status(503).json({ 
@@ -246,12 +219,10 @@ const wss = new WebSocketServer({
 // Create fork handler for WebSocket
 const forkHandler = new WSForkHandler({
   maxForksPerBlock: 10,
-  forkRetentionTime: 3600000 * 72, // 1 hour
+  forkRetentionTime: 3600000 * 72
+  , // 1 hour
   operationBufferSize: 10000
 });
-
-// Set the WebSocket server reference after it's created
-forkHandler.wss = wss;
 
 // Start periodic cleanup
 forkHandler.startCleanup();

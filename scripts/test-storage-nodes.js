@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-import { createNetworkManager } from '../lib/network-manager.js';
+import { createNetworkManager } from '/app/lib/network-manager.js';
 
 async function testStorageNodes() {
-  console.log('Testing storage nodes in database...\n');
+  console.log('Testing storage nodes in database...\\n');
   
   // Create network manager
   const networkManager = createNetworkManager({
@@ -32,7 +32,7 @@ async function testStorageNodes() {
   
   const result1 = await dgraphClient.query(query1);
   console.log(`Contracts with storage nodes: ${result1.contracts?.[0]?.count || 0}`);
-  console.log(`Total contracts: ${result1.totalContracts?.[0]?.count || 0}\n`);
+  console.log(`Total contracts: ${result1.totalContracts?.[0]?.count || 0}\\n`);
   
   // Test 2: Check a specific contract
   console.log('Test 2: Checking specific contract...');
@@ -54,7 +54,7 @@ async function testStorageNodes() {
   console.log(JSON.stringify(result2.contracts, null, 2));
   
   // Test 3: Check if accounts have contractsStoring
-  console.log('\nTest 3: Checking accounts with contractsStoring...');
+  console.log('\\nTest 3: Checking accounts with contractsStoring...');
   const query3 = `{
     accounts(func: type(Account)) @filter(has(contractsStoring)) {
       count: count(uid)
@@ -73,7 +73,7 @@ async function testStorageNodes() {
   console.log('dlux-io account:', JSON.stringify(result3.dluxio, null, 2));
   
   // Test 4: Raw edge check
-  console.log('\nTest 4: Raw edge check...');
+  console.log('\\nTest 4: Raw edge check...');
   const query4 = `{
     contracts(func: type(StorageContract), first: 1) {
       uid

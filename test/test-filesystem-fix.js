@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { createDgraphClient } from './lib/dgraph-client.js';
-import { createLogger } from './lib/logger.js';
+import { createDgraphClient } from '../lib/dgraph-client.js';
+import { createLogger } from '../lib/logger.js';
 
 const logger = createLogger('test-filesystem-fix');
 

@@ -34,7 +34,7 @@ export function createSPKRoutes({ dgraphClient, dataTransformer, schemas, valida
               utilized
               power
             }
-            contractsStoring @facets {
+            contractsStoring: ~storageNodes @filter(type(StorageContract)) {
               id
               owner {
                 username
@@ -560,12 +560,13 @@ export function createSPKRoutes({ dgraphClient, dataTransformer, schemas, valida
   router.get('/contracts/stored-by/:username', async (req, res) => {
     try {
       const { username } = req.params;
+      const { limit = 20, offset = 0 } = req.query;
       
       const query = `
-        query getStoredContracts($username: string) {
-          account(func: eq(Account.username, $username)) {
+        query getStoredContracts($username: string, $limit: string, $offset: string) {
+          account(func: eq(username, $username)) @filter(type(Account)) {
             username
-            contractsStoring {
+            contractsStoring: ~storageNodes (first: $limit, offset: $offset) @filter(type(StorageContract)) {
               id
               owner {
                 username
@@ -577,13 +578,25 @@ export function createSPKRoutes({ dgraphClient, dataTransformer, schemas, valida
               fileCount
               expiresBlock
               blockNumber
+              files: ~contract @filter(type(ContractFile)) {
+                cid
+                size
+              }
+            }
+            totalContracts: ~storageNodes @filter(type(StorageContract)) {
+              count(uid)
             }
           }
         }
       `;
       
       const txn = dgraphClient.client.newTxn();
-      const result = await txn.queryWithVars(query, { $username: username });
+      const vars = { 
+        $username: username,
+        $limit: limit.toString(),
+        $offset: offset.toString()
+      };
+      const result = await txn.queryWithVars(query, vars);
       const data = result.getJson();
       const account = data.account?.[0];
       
@@ -591,10 +604,36 @@ export function createSPKRoutes({ dgraphClient, dataTransformer, schemas, valida
         return res.status(404).json({ error: 'Account not found' });
       }
       
+      // Calculate total size and format files for each contract
+      const contractsWithCids = (account.contractsStoring || []).map(contract => {
+        const files = contract.files || [];
+        const totalSize = files.reduce((sum, file) => sum + (file.size || 0), 0);
+        
+        return {
+          id: contract.id,
+          owner: contract.owner,
+          status: contract.status,
+          power: contract.power,
+          nodeTotal: contract.nodeTotal,
+          isUnderstored: contract.isUnderstored,
+          fileCount: contract.fileCount,
+          totalSize,
+          expiresBlock: contract.expiresBlock,
+          blockNumber: contract.blockNumber,
+          files: files.map(file => ({
+            cid: file.cid,
+            size: file.size
+          }))
+        };
+      });
+      
       res.json({
         username: account.username,
-        contractsStoring: account.contractsStoring || [],
-        count: (account.contractsStoring || []).length
+        contractsStoring: contractsWithCids,
+        count: account.totalContracts?.[0]?.count || 0,
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+        hasMore: parseInt(offset) + parseInt(limit) < (account.totalContracts?.[0]?.count || 0)
       });
     } catch (error) {
       logger.error('Failed to get stored contracts', { error: error.message });
@@ -637,8 +676,18 @@ export function createSPKRoutes({ dgraphClient, dataTransformer, schemas, valida
       const result = await txn.query(query);
       const data = result.getJson();
       
+      // Normalize storageNodes to always be an array
+      const contracts = (data.contracts || []).map(contract => ({
+        ...contract,
+        storageNodes: Array.isArray(contract.storageNodes) 
+          ? contract.storageNodes 
+          : contract.storageNodes 
+            ? [contract.storageNodes] 
+            : []
+      }));
+      
       res.json({
-        contracts: data.contracts || [],
+        contracts,
         total: data.total?.[0]?.count || 0,
         limit: parseInt(limit),
         offset: parseInt(offset)
