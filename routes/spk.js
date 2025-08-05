@@ -661,6 +661,9 @@ export function createSPKRoutes({ dgraphClient, dataTransformer, schemas, valida
             fileCount
             expiresBlock
             blockNumber
+            authorized
+            utilized
+            verified
             storageNodes {
               username
             }
