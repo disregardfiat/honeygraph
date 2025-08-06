@@ -604,12 +604,13 @@ export function createSPKRoutes({ dgraphClient, dataTransformer, schemas, valida
         return res.status(404).json({ error: 'Account not found' });
       }
       
-      // Calculate total size and format files for each contract
-      const contractsWithCids = (account.contractsStoring || []).map(contract => {
+      // Deduplicate contracts by ID and calculate total size for each contract
+      const contractsMap = new Map();
+      (account.contractsStoring || []).forEach(contract => {
         const files = contract.files || [];
         const totalSize = files.reduce((sum, file) => sum + (file.size || 0), 0);
         
-        return {
+        const contractData = {
           id: contract.id,
           owner: contract.owner,
           status: contract.status,
@@ -625,7 +626,12 @@ export function createSPKRoutes({ dgraphClient, dataTransformer, schemas, valida
             size: file.size
           }))
         };
+        
+        // Use contract ID as the unique key to prevent duplicates
+        contractsMap.set(contract.id, contractData);
       });
+      
+      const contractsWithCids = Array.from(contractsMap.values());
       
       res.json({
         username: account.username,
