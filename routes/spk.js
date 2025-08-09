@@ -560,13 +560,17 @@ export function createSPKRoutes({ dgraphClient, dataTransformer, schemas, valida
   router.get('/contracts/stored-by/:username', async (req, res) => {
     try {
       const { username } = req.params;
-      const { limit = 20, offset = 0 } = req.query;
+      const { limit = 20, offset = 0, sinceBlock, sinceNodeChange } = req.query;
       
+      const sinceBlockFilter = sinceBlock ? `ge(blockNumber, ${parseInt(sinceBlock)})` : null;
+      const sinceNodeFilter = sinceNodeChange ? `ge(lastValidated, ${parseInt(sinceNodeChange)})` : null;
+      const combined = [sinceBlockFilter, sinceNodeFilter].filter(Boolean);
+      const filterStr = combined.length ? `@filter(type(StorageContract) AND ${combined.join(' AND ')})` : '@filter(type(StorageContract))';
       const query = `
         query getStoredContracts($username: string, $limit: string, $offset: string) {
           account(func: eq(username, $username)) @filter(type(Account)) {
             username
-            contractsStoring: ~storageNodes (first: $limit, offset: $offset) @filter(type(StorageContract)) {
+            contractsStoring: ~storageNodes (first: $limit, offset: $offset) ${filterStr} {
               id
               owner {
                 username
@@ -578,9 +582,15 @@ export function createSPKRoutes({ dgraphClient, dataTransformer, schemas, valida
               fileCount
               expiresBlock
               blockNumber
+              lastValidated
               files: ~contract @filter(type(ContractFile)) {
                 cid
                 size
+              }
+              storageNodes {
+                storageAccount { username }
+                nodeNumber
+                id
               }
             }
             totalContracts: ~storageNodes @filter(type(StorageContract)) {
